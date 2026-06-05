@@ -5,8 +5,10 @@ type Props = {
   currentTime: string | null;
   totalDuration: { start: string; end: string } | null;
   isReplayMode: boolean;
+  isPlaying: boolean;
   speed: number;
   onSeek: (eventIndex: number) => void;
+  onTogglePlay: () => void;
   onGoLive: () => void;
   onSpeedChange: (speed: number) => void;
 };
@@ -23,8 +25,10 @@ export function ReplayControls({
   currentTime,
   totalDuration,
   isReplayMode,
+  isPlaying,
   speed,
   onSeek,
+  onTogglePlay,
   onGoLive,
   onSpeedChange
 }: Props) {
@@ -41,10 +45,19 @@ export function ReplayControls({
   const progress = computeProgress();
 
   const handleClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    if (!totalDuration) return;
     const rect = e.currentTarget.getBoundingClientRect();
     const ratio = Math.max(0, Math.min(1, (e.clientX - rect.left) / rect.width));
-    const index = Math.round(ratio * (eventBuffer.length - 1));
-    onSeek(index);
+    const rangeMs = Date.parse(totalDuration.end) - Date.parse(totalDuration.start);
+    const targetMs = Date.parse(totalDuration.start) + ratio * rangeMs;
+    let lo = 0;
+    let hi = eventBuffer.length - 1;
+    while (lo < hi) {
+      const mid = (lo + hi + 1) >> 1;
+      if (Date.parse(eventBuffer[mid].timestamp) <= targetMs) lo = mid;
+      else hi = mid - 1;
+    }
+    onSeek(lo);
   };
 
   return (
@@ -57,6 +70,16 @@ export function ReplayControls({
           <span className="replay-controls__live-dot" />
           Live
         </button>
+
+        {isReplayMode && (
+          <button
+            className="replay-controls__play-btn"
+            onClick={onTogglePlay}
+            title={isPlaying ? "Pause" : "Play"}
+          >
+            {isPlaying ? "\u23F8" : "\u25B6"}
+          </button>
+        )}
 
         <div className="replay-controls__speeds">
           {SPEEDS.map((s) => (

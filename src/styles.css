@@ -608,3 +608,26 @@ body {
   opacity: 0.3;
   cursor: default;
 }
+
+.replay-controls__play-btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 28px;
+  font-size: 0.85rem;
+  border: 1px solid #d1d5db;
+  border-radius: 4px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.1s ease;
+  line-height: 1;
+  padding: 0;
+  flex-shrink: 0;
+}
+
+.replay-controls__play-btn:hover {
+  background: #f3f4f6;
+  border-color: #93c5fd;
+}

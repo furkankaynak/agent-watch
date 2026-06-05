@@ -23,12 +23,14 @@ export type ReplayControls = {
   seek: (eventIndex: number) => void;
   goLive: () => void;
   setSpeed: (speed: number) => void;
+  togglePlay: () => void;
 };
 
 export function useReplay(eventBuffer: LogEvent[]): ReplayControls {
   const [playhead, setPlayhead] = useState<number | null>(null);
   const [replayState, setReplayState] = useState<WorkflowState>(createInitialWorkflowState());
   const [speed, setSpeed] = useState(1);
+  const [paused, setPaused] = useState(false);
   const [virtualTime, setVirtualTime] = useState<string | null>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const tickMetaRef = useRef<{
@@ -91,6 +93,7 @@ export function useReplay(eventBuffer: LogEvent[]): ReplayControls {
 
   const seek = useCallback((eventIndex: number) => {
     clearTimer();
+    setPaused(false);
     const clampedIndex = Math.max(0, Math.min(eventIndex, eventBuffer.length - 1));
     const state = eventBuffer
       .slice(0, clampedIndex + 1)
@@ -103,6 +106,7 @@ export function useReplay(eventBuffer: LogEvent[]): ReplayControls {
 
   const goLive = useCallback(() => {
     clearTimer();
+    setPaused(false);
     setPlayhead(null);
     setReplayState(createInitialWorkflowState());
     setVirtualTime(null);
@@ -113,17 +117,21 @@ export function useReplay(eventBuffer: LogEvent[]): ReplayControls {
     setSpeed(newSpeed);
   }, []);
 
+  const togglePlay = useCallback(() => {
+    setPaused((p) => !p);
+  }, []);
+
   useEffect(() => {
-    if (playhead === null || !eventBuffer.length) {
-      setVirtualTime(null);
+    clearTimer();
+    if (playhead === null || !eventBuffer.length || paused) {
       return;
     }
     startTick(playhead, eventBuffer, speed);
     return () => clearTimer();
-  }, [playhead, eventBuffer, startTick, clearTimer, speed]);
+  }, [playhead, eventBuffer, startTick, clearTimer, speed, paused]);
 
   useEffect(() => {
-    if (playhead === null || !eventBuffer.length) return;
+    if (playhead === null || !eventBuffer.length || paused) return;
     if (tickMetaRef.current) {
       clearTimer();
       startTick(playhead, eventBuffer, speed);
@@ -134,11 +142,12 @@ export function useReplay(eventBuffer: LogEvent[]): ReplayControls {
     replayState,
     currentTime,
     totalDuration,
-    isPlaying: playhead !== null && playhead < eventBuffer.length - 1,
+    isPlaying: playhead !== null && playhead < eventBuffer.length - 1 && !paused,
     isReplayMode,
     speed,
     seek,
     goLive,
-    setSpeed: changeSpeed
+    setSpeed: changeSpeed,
+    togglePlay
   };
 }

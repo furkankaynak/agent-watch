@@ -18,7 +18,7 @@ export default function App() {
   const { state, eventBuffer, connectionStatus, selectedAgentId, setSelectedAgentId } =
     useWorkflowStream();
 
-  const { replayState, currentTime, totalDuration, isReplayMode, speed, seek, goLive, setSpeed } =
+  const { replayState, currentTime, totalDuration, isReplayMode, isPlaying, speed, seek, goLive, setSpeed, togglePlay } =
     useReplay(eventBuffer);
 
   const displayState = isReplayMode ? replayState : state;
@@ -65,8 +65,10 @@ export default function App() {
         currentTime={currentTime}
         totalDuration={totalDuration}
         isReplayMode={isReplayMode}
+        isPlaying={isPlaying}
         speed={speed}
         onSeek={seek}
+        onTogglePlay={togglePlay}
         onGoLive={goLive}
         onSpeedChange={setSpeed}
       />
