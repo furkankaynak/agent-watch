@@ -101,7 +101,7 @@ export function InspectorPanel({ agent }: Props) {
         </div>
       )}
 
-      {agent.errors.length > 0 && (
+      {import.meta.env.VITE_HIDE_ERRORS !== "true" && agent.errors.length > 0 && (
         <div className="inspector__section inspector__section--errors">
           <h4>Errors</h4>
           <ul className="inspector__list">

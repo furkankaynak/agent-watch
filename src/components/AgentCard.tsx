@@ -9,7 +9,9 @@ type Props = {
 };
 
 export function AgentCard({ agent, isSelected, onSelect }: Props) {
-  const statusClass = `agent-card agent-card--${agent.status}${isSelected ? " agent-card--selected" : ""}`;
+  const hideErrors = import.meta.env.VITE_HIDE_ERRORS === "true";
+  const visibleStatus = hideErrors && agent.status === "failed" ? "idle" : agent.status;
+  const statusClass = `agent-card agent-card--${visibleStatus}${isSelected ? " agent-card--selected" : ""}`;
 
   return (
     <div className={statusClass} onClick={() => onSelect(agent.id)}>
@@ -40,7 +42,7 @@ export function AgentCard({ agent, isSelected, onSelect }: Props) {
       <ResourceChips label="Skills" items={agent.skills} />
       <ResourceChips label="Rules" items={agent.rules} />
 
-      {agent.errors.length > 0 && (
+      {!hideErrors && agent.errors.length > 0 && (
         <div className="agent-card__errors">
           Errors: {agent.errors.length}
         </div>

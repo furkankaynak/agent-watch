@@ -14,8 +14,10 @@ const statusColors: Record<AgentNode["status"], string> = {
 };
 
 export function StatusLight({ status }: Props) {
-  const color = statusColors[status];
-  const pulse = status === "running";
+  const hideErrors = import.meta.env.VITE_HIDE_ERRORS === "true";
+  const effectiveStatus = hideErrors && status === "failed" ? "incoming" : status;
+  const color = statusColors[effectiveStatus];
+  const pulse = effectiveStatus === "running";
 
   return (
     <span
