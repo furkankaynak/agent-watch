@@ -5,8 +5,10 @@ type Props = {
   currentTime: string | null;
   totalDuration: { start: string; end: string } | null;
   isReplayMode: boolean;
+  speed: number;
   onSeek: (eventIndex: number) => void;
   onGoLive: () => void;
+  onSpeedChange: (speed: number) => void;
 };
 
 function formatTime(ts: string | null): string {
@@ -14,13 +16,17 @@ function formatTime(ts: string | null): string {
   return ts.slice(11, 19);
 }
 
+const SPEEDS = [1, 2, 4, 8];
+
 export function ReplayControls({
   eventBuffer,
   currentTime,
   totalDuration,
   isReplayMode,
+  speed,
   onSeek,
-  onGoLive
+  onGoLive,
+  onSpeedChange
 }: Props) {
   if (eventBuffer.length === 0) return null;
 
@@ -51,6 +57,19 @@ export function ReplayControls({
           <span className="replay-controls__live-dot" />
           Live
         </button>
+
+        <div className="replay-controls__speeds">
+          {SPEEDS.map((s) => (
+            <button
+              key={s}
+              className={`replay-controls__speed-btn ${speed === s ? "replay-controls__speed-btn--active" : ""} ${!isReplayMode ? "replay-controls__speed-btn--disabled" : ""}`}
+              disabled={!isReplayMode}
+              onClick={() => onSpeedChange(s)}
+            >
+              {s}x
+            </button>
+          ))}
+        </div>
 
         <div className="replay-controls__timeline" onClick={handleClick}>
           <div className="replay-controls__track">

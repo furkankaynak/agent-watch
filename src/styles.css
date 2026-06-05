@@ -570,3 +570,41 @@ body {
   min-width: 9em;
   text-align: right;
 }
+
+.replay-controls__speeds {
+  display: flex;
+  gap: 2px;
+  margin-right: 4px;
+}
+
+.replay-controls__speed-btn {
+  padding: 2px 6px;
+  font-size: 0.65rem;
+  font-family: monospace;
+  font-weight: 600;
+  border: 1px solid #d1d5db;
+  border-radius: 3px;
+  background: #fff;
+  color: #374151;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.replay-controls__speed-btn:hover:not(:disabled) {
+  background: #f3f4f6;
+}
+
+.replay-controls__speed-btn--active {
+  background: #2563eb;
+  color: #fff;
+  border-color: #2563eb;
+}
+
+.replay-controls__speed-btn--active:hover {
+  background: #1d4ed8 !important;
+}
+
+.replay-controls__speed-btn--disabled {
+  opacity: 0.3;
+  cursor: default;
+}
