@@ -9,8 +9,11 @@ let currentRunId: number | null = null;
 let lastActivityAt = 0;
 
 export function processEvent(db: Database.Database, event: LogEvent): void {
-  lastActivityAt = Date.now();
-  checkStaleRun(db);
+  const now = Date.now();
+  if (now - lastActivityAt > 60_000) {
+    checkStaleRun(db, now);
+  }
+  lastActivityAt = now;
 
   switch (event.eventType) {
     case "tool_start":
@@ -254,7 +257,7 @@ function handleSessionEnd(db: Database.Database, event: LogEvent): void {
   } else if (finalStatus === "aborted" || finalStatus === "unknown") {
     newStatus = "failed";
   } else if (finalStatus === "generating") {
-    newStatus = agent.status === "idle" ? "idle" : "running";
+    newStatus = agent.status === "running" || agent.status === "incoming" ? "running" : agent.status;
   }
 
   const isTerminal =
@@ -293,11 +296,8 @@ function handleDefault(db: Database.Database, event: LogEvent): void {
   ).run(event.timestamp, bound.agentId);
 }
 
-function checkStaleRun(db: Database.Database): void {
-  if (
-    currentRunId !== null &&
-    Date.now() - lastActivityAt > 60_000
-  ) {
+function checkStaleRun(db: Database.Database, now: number): void {
+  if (currentRunId !== null) {
     const activeAgents = db
       .prepare(
         "SELECT COUNT(*) as count FROM agents WHERE run_id = ? AND status NOT IN ('completed', 'failed')",
@@ -307,7 +307,7 @@ function checkStaleRun(db: Database.Database): void {
     if (activeAgents.count === 0) {
       db.prepare(
         "UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?",
-      ).run(new Date().toISOString(), currentRunId);
+      )      .run(new Date(now).toISOString(), currentRunId);
       currentRunId = null;
     }
   }
