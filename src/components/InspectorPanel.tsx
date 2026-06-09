@@ -17,6 +17,15 @@ export function InspectorPanel({ agent }: Props) {
     <div className="inspector">
       <h3 className="inspector__title">{agent.label}</h3>
 
+      {agent.parentAgentId && (
+        <div className="inspector-hierarchy">
+          <h4>Parent</h4>
+          <span className="inspector-parent-link">
+            {agent.parentLabel ?? agent.parentAgentId}
+          </span>
+        </div>
+      )}
+
       <div className="inspector__grid">
         <div className="inspector__field">
           <span className="inspector__key">Type</span>
@@ -32,13 +41,6 @@ export function InspectorPanel({ agent }: Props) {
           <div className="inspector__field">
             <span className="inspector__key">Model</span>
             <span>{agent.model}</span>
-          </div>
-        )}
-
-        {agent.parentLabel && (
-          <div className="inspector__field">
-            <span className="inspector__key">Parent</span>
-            <span>{agent.parentLabel}</span>
           </div>
         )}
 

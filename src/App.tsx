@@ -5,6 +5,7 @@ import { EventFeed } from "./components/EventFeed";
 import { InspectorPanel } from "./components/InspectorPanel";
 import { OfficeBoard } from "./components/OfficeBoard";
 import { ReplayControls } from "./components/ReplayControls";
+import { SessionSidebar } from "./components/SessionSidebar";
 import { selectAgents } from "./shared/workflowReducer";
 import type { AgentNode } from "./shared/workflowTypes";
 
@@ -16,7 +17,7 @@ const connectionLabels: Record<string, string> = {
 };
 
 export default function App() {
-  const { selectedRunId } = useRuns();
+  const { runs, selectedRunId, activeRunId, setSelectedRunId } = useRuns();
   const { state, eventBuffer, connectionStatus, selectedAgentId, setSelectedAgentId } =
     useWorkflowStream(selectedRunId);
 
@@ -44,6 +45,12 @@ export default function App() {
       </header>
 
       <div className="app-body">
+        <SessionSidebar
+          runs={runs}
+          selectedRunId={selectedRunId}
+          activeRunId={activeRunId}
+          onSelect={(id) => setSelectedRunId(id)}
+        />
         <main className="app-main">
           <OfficeBoard
             agents={agents}
