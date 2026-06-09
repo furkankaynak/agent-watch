@@ -47,6 +47,7 @@ function ensureRun(db: Database.Database): number {
 
 function bindConversation(
   event: LogEvent,
+  db?: Database.Database,
 ): { agentId?: string } {
   const conversationId = event.fields.conversation_id;
   if (!conversationId) return {};
@@ -68,7 +69,23 @@ function bindConversation(
     return { agentId: nextAgentId };
   }
 
-  return { agentId: conversationLatestAgentId[conversationId] };
+  const fallback = conversationLatestAgentId[conversationId];
+  if (fallback) {
+    return { agentId: fallback };
+  }
+
+  // Last resort: search agents table by conversation_id
+  if (db) {
+    const agent = db
+      .prepare("SELECT id FROM agents WHERE conversation_id = ? LIMIT 1")
+      .get(conversationId) as { id: string } | undefined;
+    if (agent) {
+      conversationLatestAgentId[conversationId] = agent.id;
+      return { agentId: agent.id };
+    }
+  }
+
+  return {};
 }
 
 function handleToolStart(db: Database.Database, event: LogEvent): void {
@@ -76,7 +93,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
 
   if (toolName === "Task") {
     const runId = ensureRun(db);
-    const bound = bindConversation(event);
+    const bound = bindConversation(event, db);
     const agentId = event.fields.tool_use_id;
     if (!agentId) return;
 
@@ -85,7 +102,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
     const label = humanizeLabel(subagentType);
 
     db.prepare(
-      `INSERT INTO agents (id, run_id, label, agent_type, description, parent_agent_id, conversation_id, status, created_at, last_seen_at)
+      `INSERT OR REPLACE INTO agents (id, run_id, label, agent_type, description, parent_agent_id, conversation_id, status, created_at, last_seen_at)
        VALUES (?, ?, ?, ?, ?, ?, ?, 'incoming', ?, ?)`,
     ).run(
       agentId,
@@ -112,7 +129,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
     return;
   }
 
-  const bound = bindConversation(event);
+    const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   const agentId = bound.agentId;
@@ -120,7 +137,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
   if (!toolUseId) return;
 
   db.prepare(
-    `INSERT INTO tool_calls (id, agent_id, tool_name, status, started_at)
+    `INSERT OR REPLACE INTO tool_calls (id, agent_id, tool_name, status, started_at)
      VALUES (?, ?, ?, 'started', ?)`,
   ).run(toolUseId, agentId, toolName, event.timestamp);
 
@@ -159,7 +176,7 @@ function handleSubagentStart(db: Database.Database, event: LogEvent): void {
 }
 
 function handleToolDone(db: Database.Database, event: LogEvent): void {
-  const bound = bindConversation(event);
+  const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   const toolUseId = event.fields.tool_use_id;
@@ -210,7 +227,7 @@ function handleToolDone(db: Database.Database, event: LogEvent): void {
 }
 
 function handleChipEvent(db: Database.Database, event: LogEvent): void {
-  const bound = bindConversation(event);
+  const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   const chipType =
@@ -241,7 +258,7 @@ function handleChipEvent(db: Database.Database, event: LogEvent): void {
 }
 
 function handleSessionEnd(db: Database.Database, event: LogEvent): void {
-  const bound = bindConversation(event);
+  const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   const agent = db
@@ -286,7 +303,7 @@ function handleSessionEnd(db: Database.Database, event: LogEvent): void {
 }
 
 function handleDefault(db: Database.Database, event: LogEvent): void {
-  const bound = bindConversation(event);
+  const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   db.prepare(

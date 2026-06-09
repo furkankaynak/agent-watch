@@ -5,6 +5,7 @@ import {
   formatActivityEvent,
   formatHeartbeat,
   readAppendedLogEvents,
+  readLogSnapshot,
   resolveActivityLogPath,
   type LogFileCursor
 } from "./logFile";
@@ -31,23 +32,33 @@ async function pollLogFile() {
     cursor ??= await createLogFileCursor(ACTIVITY_LOG_PATH);
     const result = await readAppendedLogEvents(ACTIVITY_LOG_PATH, cursor);
     cursor = result.cursor;
-    const db = getDb();
-
-    for (const event of result.events) {
-      db.prepare(
-        "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
-      ).run(
-        event.lineNumber, event.timestamp, event.eventType,
-        JSON.stringify(event.fields), event.raw
-      );
-      processEvent(db, event);
-    }
-
-    if (cursor) {
+    if (result.events.length > 0) {
+      const db = getDb();
+      insertEvents(db, result.events);
       stateUpsert(db, "log_cursor_offset", String(cursor.offset));
     }
   } catch (error) {
     console.error("Error polling log file", error);
+  }
+}
+
+type LogEvent = {
+  lineNumber: number;
+  timestamp: string;
+  eventType: string;
+  fields: Record<string, string>;
+  raw: string;
+};
+
+function insertEvents(db: Database.Database, events: LogEvent[]) {
+  for (const event of events) {
+    db.prepare(
+      "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
+    ).run(
+      event.lineNumber, event.timestamp, event.eventType,
+      JSON.stringify(event.fields), event.raw
+    );
+    processEvent(db, event as any);
   }
 }
 
@@ -181,11 +192,18 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
   response.on("close", close);
 }
 
-// Initialize: resume cursor if saved, start background poller
+// Initialize: load full file into SQLite on first start, then poll for appends
 const db = getDb();
-const savedOffset = stateGet(db, "log_cursor_offset");
-if (savedOffset) {
-  cursor = { offset: Number(savedOffset) } as LogFileCursor;
+const hasData = db.prepare("SELECT COUNT(*) as c FROM raw_events").get() as { c: number };
+if (hasData.c === 0) {
+  readLogSnapshot(ACTIVITY_LOG_PATH).then((events) => {
+    if (events.length > 0) {
+      insertEvents(db, events);
+      console.log(`Loaded ${events.length} events from activity.log`);
+    }
+  }).catch((err) => {
+    console.error("Error reading initial log snapshot", err);
+  });
 }
 const filePollTimer = setInterval(() => { void pollLogFile(); }, POLL_MS);
 
