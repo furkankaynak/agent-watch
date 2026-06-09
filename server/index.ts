@@ -1,13 +1,15 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import type Database from "better-sqlite3";
 import {
   createLogFileCursor,
   formatActivityEvent,
   formatHeartbeat,
   readAppendedLogEvents,
-  readLogSnapshot,
   resolveActivityLogPath,
   type LogFileCursor
 } from "./logFile";
+import { getDb } from "./database";
+import { processEvent } from "./eventProcessor";
 
 const HEARTBEAT_MS = 15_000;
 const POLL_MS = 1_000;
@@ -21,6 +23,42 @@ const corsHeaders = {
   "Access-Control-Allow-Methods": "GET, OPTIONS",
   "Access-Control-Allow-Origin": "*"
 };
+
+let cursor: LogFileCursor | null = null;
+
+async function pollLogFile() {
+  try {
+    cursor ??= await createLogFileCursor(ACTIVITY_LOG_PATH);
+    const result = await readAppendedLogEvents(ACTIVITY_LOG_PATH, cursor);
+    cursor = result.cursor;
+    const db = getDb();
+
+    for (const event of result.events) {
+      db.prepare(
+        "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
+      ).run(
+        event.lineNumber, event.timestamp, event.eventType,
+        JSON.stringify(event.fields), event.raw
+      );
+      processEvent(db, event);
+    }
+
+    if (cursor) {
+      stateUpsert(db, "log_cursor_offset", String(cursor.offset));
+    }
+  } catch (error) {
+    console.error("Error polling log file", error);
+  }
+}
+
+function stateUpsert(db: Database.Database, key: string, value: string) {
+  db.prepare("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)").run(key, value);
+}
+
+function stateGet(db: Database.Database, key: string): string | undefined {
+  const row = db.prepare("SELECT value FROM server_state WHERE key = ?").get(key) as { value: string } | undefined;
+  return row?.value;
+}
 
 const server = createServer((request, response) => {
   void handleRequest(request, response).catch((error: unknown) => {
@@ -56,12 +94,32 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   }
 
   if (url.pathname === "/api/snapshot") {
-    writeJson(response, 200, await readLogSnapshot(ACTIVITY_LOG_PATH));
+    const db = getDb();
+    const rows = db.prepare(
+      "SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events ORDER BY id"
+    ).all();
+
+    const events = (rows as any[]).map((row: any) => ({
+      lineNumber: row.line_number,
+      timestamp: row.timestamp,
+      eventType: row.event_type,
+      fields: JSON.parse(row.fields),
+      raw: row.raw,
+    }));
+
+    writeJson(response, 200, events);
+    return;
+  }
+
+  if (url.pathname === "/api/runs") {
+    const db = getDb();
+    const runs = db.prepare("SELECT id, label, status, started_at, ended_at FROM runs ORDER BY id DESC LIMIT 50").all();
+    writeJson(response, 200, runs);
     return;
   }
 
   if (url.pathname === "/api/events") {
-    streamLogEvents(request, response);
+    streamSseEvents(request, response);
     return;
   }
 
@@ -77,7 +135,7 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown) 
   response.end(JSON.stringify(body));
 }
 
-function streamLogEvents(request: IncomingMessage, response: ServerResponse) {
+function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
   response.writeHead(200, {
     ...corsHeaders,
     "Cache-Control": "no-cache, no-transform",
@@ -88,59 +146,48 @@ function streamLogEvents(request: IncomingMessage, response: ServerResponse) {
   response.flushHeaders();
 
   let closed = false;
-  let cursor: LogFileCursor | null = null;
-  let polling = false;
-
-  const poll = async () => {
-    if (closed || polling) {
-      return;
-    }
-
-    polling = true;
-
-    try {
-      cursor ??= await createLogFileCursor(ACTIVITY_LOG_PATH);
-
-      if (closed) {
-        return;
-      }
-
-      const result = await readAppendedLogEvents(ACTIVITY_LOG_PATH, cursor);
-      cursor = result.cursor;
-
-      if (closed) {
-        return;
-      }
-
-      for (const event of result.events) {
-        response.write(formatActivityEvent(event));
-      }
-    } catch (error) {
-      console.error("Error tailing activity log", error);
-    } finally {
-      polling = false;
-    }
-  };
+  let lastEventId = 0;
 
   const pollTimer = setInterval(() => {
-    void poll();
-  }, POLL_MS);
-  const heartbeatTimer = setInterval(() => {
-    if (!closed) {
-      response.write(formatHeartbeat());
+    if (closed) return;
+
+    const db = getDb();
+    const rows = db.prepare(
+      "SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id > ? ORDER BY id"
+    ).all(lastEventId);
+
+    for (const row of rows as any[]) {
+      const event = {
+        id: row.id,
+        lineNumber: row.line_number,
+        timestamp: row.timestamp,
+        eventType: row.event_type,
+        fields: JSON.parse(row.fields),
+        raw: row.raw,
+      };
+      response.write(formatActivityEvent(event));
+      lastEventId = row.id;
     }
-  }, HEARTBEAT_MS);
+
+    response.write(formatHeartbeat());
+  }, POLL_MS);
 
   const close = () => {
     closed = true;
     clearInterval(pollTimer);
-    clearInterval(heartbeatTimer);
   };
 
   request.on("close", close);
   response.on("close", close);
-  void poll();
 }
+
+// Initialize: resume cursor if saved, start background poller
+const db = getDb();
+const savedOffset = stateGet(db, "log_cursor_offset");
+if (savedOffset) {
+  cursor = { offset: Number(savedOffset) } as LogFileCursor;
+}
+const filePollTimer = setInterval(() => { void pollLogFile(); }, POLL_MS);
 
 server.listen(port, () => {
   console.log(`Agent Office Dashboard server listening on http://localhost:${port}`);

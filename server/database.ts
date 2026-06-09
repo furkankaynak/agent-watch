@@ -70,6 +70,11 @@ export function initSchema(database: Database.Database): void {
       fields TEXT NOT NULL,
       raw TEXT NOT NULL
     );
+
+    CREATE TABLE IF NOT EXISTS server_state (
+      key TEXT PRIMARY KEY,
+      value TEXT NOT NULL
+    );
   `);
 }
 
