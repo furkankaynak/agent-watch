@@ -1,7 +1,7 @@
 import Database from "better-sqlite3";
-import path from "path";
+import { join } from "node:path";
 
-const DB_PATH = process.env.DB_PATH ?? path.join(process.cwd(), "agents-watch.db");
+const DB_PATH = process.env.DB_PATH ?? join(process.cwd(), "agents-watch.db");
 
 let db: Database.Database;
 
@@ -76,5 +76,6 @@ export function initSchema(database: Database.Database): void {
 export function closeDb(): void {
   if (db) {
     db.close();
+    db = undefined as unknown as Database.Database;
   }
 }
