@@ -3,3 +3,6 @@ dist/
 .env
 *.log
 .worktrees/
+*.db
+*.db-shm
+*.db-wal
