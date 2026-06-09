@@ -1,4 +1,5 @@
 import { useWorkflowStream } from "./hooks/useWorkflowStream";
+import { useRuns } from "./hooks/useRuns";
 import { useReplay } from "./hooks/useReplay";
 import { EventFeed } from "./components/EventFeed";
 import { InspectorPanel } from "./components/InspectorPanel";
@@ -15,8 +16,9 @@ const connectionLabels: Record<string, string> = {
 };
 
 export default function App() {
+  const { selectedRunId } = useRuns();
   const { state, eventBuffer, connectionStatus, selectedAgentId, setSelectedAgentId } =
-    useWorkflowStream();
+    useWorkflowStream(selectedRunId);
 
   const { replayState, currentTime, totalDuration, isReplayMode, isPlaying, speed, seek, goLive, setSpeed, togglePlay } =
     useReplay(eventBuffer);
