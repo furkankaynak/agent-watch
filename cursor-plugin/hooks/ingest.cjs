@@ -44,7 +44,6 @@ const PERMISSION_HOOKS = new Set([
 const ALLOW = { permission: 'allow' };
 
 const pluginRoot = path.dirname(path.dirname(__filename));
-const BUFFER_FILE = path.join(pluginRoot, '.buffer.jsonl');
 const INGEST_PORT = Number(process.env.AGENTS_WATCH_PORT || 4318);
 
 // ── helpers ──
@@ -123,16 +122,31 @@ function commonFields(payload) {
 
 // ── buffer & tcp ──
 
-function appendToBuffer(line) {
-  try { fs.appendFileSync(BUFFER_FILE, line + '\n', 'utf8'); } catch {}
+function getBufferFile(eventBody) {
+  const raw = eventBody?.fields?.workspace_roots;
+  if (raw) {
+    try {
+      const roots = JSON.parse(raw);
+      if (Array.isArray(roots) && roots.length > 0) {
+        const dir = path.join(roots[0], '.cursor', '.runtime');
+        try { fs.mkdirSync(dir, { recursive: true }); } catch {}
+        return path.join(dir, 'agents-watch-buffer.jsonl');
+      }
+    } catch {}
+  }
+  return path.join(pluginRoot, '.buffer.jsonl');
 }
 
-function flushBufferToServer() {
+function appendToBuffer(file, line) {
+  try { fs.appendFileSync(file, line + '\n', 'utf8'); } catch {}
+}
+
+function flushBufferToServer(file) {
   try {
-    if (!fs.existsSync(BUFFER_FILE)) return;
+    if (!fs.existsSync(file)) return;
     const socket = net.connect({ host: '127.0.0.1', port: INGEST_PORT }, () => {
-      const data = fs.readFileSync(BUFFER_FILE, 'utf8');
-      try { fs.rmSync(BUFFER_FILE); } catch {}
+      const data = fs.readFileSync(file, 'utf8');
+      try { fs.rmSync(file); } catch {}
       if (data) socket.write(data);
       socket.end();
     });
@@ -148,8 +162,9 @@ function sendEvent(appName, eventBody) {
     appName,
     event: eventBody,
   });
-  appendToBuffer(line);
-  flushBufferToServer();
+  const bufferFile = getBufferFile(eventBody);
+  appendToBuffer(bufferFile, line);
+  flushBufferToServer(bufferFile);
 }
 
 // ── handlers ──
