@@ -1,9 +1,9 @@
 import { useWorkflowStream } from "./hooks/useWorkflowStream";
-import { useRuns } from "./hooks/useRuns";
+import { useSessions } from "./hooks/useSessions";
 import { useReplay } from "./hooks/useReplay";
 import { EventFeed } from "./components/EventFeed";
 import { InspectorPanel } from "./components/InspectorPanel";
-import { OfficeBoard } from "./components/OfficeBoard";
+import AgentCanvas from "./components/AgentCanvas";
 import { ReplayControls } from "./components/ReplayControls";
 import { SessionSidebar } from "./components/SessionSidebar";
 import { selectAgents } from "./shared/workflowReducer";
@@ -17,9 +17,9 @@ const connectionLabels: Record<string, string> = {
 };
 
 export default function App() {
-  const { runs, selectedRunId, activeRunId, setSelectedRunId } = useRuns();
+  const { sessions, selectedSessionId, activeSessionId, setSelectedSessionId } = useSessions();
   const { state, eventBuffer, connectionStatus, selectedAgentId, setSelectedAgentId } =
-    useWorkflowStream(selectedRunId);
+    useWorkflowStream(selectedSessionId);
 
   const { replayState, currentTime, totalDuration, isReplayMode, isPlaying, speed, seek, goLive, setSpeed, togglePlay } =
     useReplay(eventBuffer);
@@ -46,13 +46,13 @@ export default function App() {
 
       <div className="app-body">
         <SessionSidebar
-          runs={runs}
-          selectedRunId={selectedRunId}
-          activeRunId={activeRunId}
-          onSelect={(id) => setSelectedRunId(id)}
+          sessions={sessions}
+          selectedSessionId={selectedSessionId}
+          activeSessionId={activeSessionId}
+          onSelect={(id) => setSelectedSessionId(id)}
         />
         <main className="app-main">
-          <OfficeBoard
+          <AgentCanvas
             agents={agents}
             selectedAgentId={selectedAgentId}
             onSelectAgent={setSelectedAgentId}
