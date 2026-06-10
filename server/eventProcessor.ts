@@ -353,6 +353,9 @@ function handleSessionEnd(db: Database.Database, event: LogEvent): void {
     newStatus = "failed";
   } else if (finalStatus === "generating") {
     newStatus = agent.status === "running" || agent.status === "incoming" ? "running" : agent.status;
+  } else if (!finalStatus) {
+    // sessionEnd hook from Cursor — no final_status field, always terminal
+    newStatus = "completed";
   }
 
   const isTerminal = newStatus === "completed" || newStatus === "failed";
@@ -384,8 +387,7 @@ function handleSubagentStop(db: Database.Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
-  const newStatus = resolveHookStatus(event.fields.status);
-  if (!newStatus) return;
+  const newStatus = resolveHookStatus(event.fields.status) ?? "completed";
 
   completeAgent(db, bound.agentId, newStatus, event.timestamp, true);
 }
@@ -394,8 +396,7 @@ function handleStopHook(db: Database.Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
-  const newStatus = resolveHookStatus(event.fields.status);
-  if (!newStatus) return;
+  const newStatus = resolveHookStatus(event.fields.status) ?? "completed";
 
   const isTerminal = newStatus === "completed" || newStatus === "failed";
   completeAgent(db, bound.agentId, newStatus, event.timestamp, isTerminal);

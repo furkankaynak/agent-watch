@@ -55,7 +55,7 @@ describe("useWorkflowStream", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
     vi.stubGlobal("EventSource", MockEventSource);
 
-    const { result, unmount } = renderHook(() => useWorkflowStream(1));
+    const { result, unmount } = renderHook(() => useWorkflowStream("conv-1"));
 
     await waitFor(() => {
       expect(result.current.connectionStatus).toBe("live");
@@ -99,7 +99,7 @@ describe("useWorkflowStream", () => {
     );
     vi.stubGlobal("EventSource", MockEventSource);
 
-    const { result, unmount } = renderHook(() => useWorkflowStream(1));
+    const { result, unmount } = renderHook(() => useWorkflowStream("conv-1"));
 
     await waitFor(() => {
       const agents = Object.values(result.current.state.agents);
@@ -127,7 +127,7 @@ describe("useWorkflowStream", () => {
       }
     );
 
-    const { result, unmount } = renderHook(() => useWorkflowStream(1));
+    const { result, unmount } = renderHook(() => useWorkflowStream("conv-1"));
 
     await waitFor(() => {
       expect(es).not.toBeNull();
@@ -165,7 +165,7 @@ describe("useWorkflowStream", () => {
     vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: true, json: () => Promise.resolve([]) }));
     vi.stubGlobal("EventSource", MockEventSource);
 
-    const { result, unmount } = renderHook(() => useWorkflowStream(1));
+    const { result, unmount } = renderHook(() => useWorkflowStream("conv-1"));
 
     await waitFor(() => {
       expect(result.current.connectionStatus).toBe("live");
@@ -191,7 +191,7 @@ describe("useWorkflowStream", () => {
       }
     );
 
-    const { unmount } = renderHook(() => useWorkflowStream(1));
+    const { unmount } = renderHook(() => useWorkflowStream("conv-1"));
 
     await waitFor(() => {
       expect(true).toBe(true);

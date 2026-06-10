@@ -90,6 +90,24 @@ export function initSchema(database: Database.Database): void {
     CREATE INDEX IF NOT EXISTS idx_agents_conversation ON agents(conversation_id);
     CREATE INDEX IF NOT EXISTS idx_tool_calls_agent_status ON tool_calls(agent_id, status);
   `);
+
+  migrate(database);
+}
+
+function migrate(database: Database.Database): void {
+  try {
+    database.exec("ALTER TABLE raw_events ADD COLUMN conversation_id TEXT");
+  } catch {
+    // column already exists — ignore
+  }
+  database.exec(
+    "CREATE INDEX IF NOT EXISTS idx_raw_events_conversation ON raw_events(conversation_id)"
+  );
+  database.exec(
+    `UPDATE raw_events
+     SET conversation_id = json_extract(fields, '$.conversation_id')
+     WHERE conversation_id IS NULL`
+  );
 }
 
 export function closeDb(): void {

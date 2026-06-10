@@ -5,7 +5,7 @@ import type { WorkflowState } from "../shared/workflowTypes";
 
 export type ConnectionStatus = "connecting" | "live" | "reconnecting" | "offline";
 
-export function useWorkflowStream(runId: number | null) {
+export function useWorkflowStream(conversationId: string | null) {
   const [state, setState] = useState<WorkflowState>(createInitialWorkflowState());
   const [eventBuffer, setEventBuffer] = useState<LogEvent[]>([]);
   const [connectionStatus, setConnectionStatus] = useState<ConnectionStatus>("connecting");
@@ -17,7 +17,7 @@ export function useWorkflowStream(runId: number | null) {
   }, []);
 
   useEffect(() => {
-    if (runId === null) {
+    if (conversationId === null) {
       setState(createInitialWorkflowState());
       setEventBuffer([]);
       setConnectionStatus("connecting");
@@ -28,7 +28,7 @@ export function useWorkflowStream(runId: number | null) {
 
     const doFetch = async () => {
       try {
-        const res = await globalThis.fetch(`/api/snapshot?run_id=${runId}`);
+        const res = await globalThis.fetch(`/api/snapshot?conversation_id=${conversationId}`);
         const events: LogEvent[] = await res.json();
         if (!mountedRef.current) return;
         setEventBuffer(events);
@@ -41,7 +41,7 @@ export function useWorkflowStream(runId: number | null) {
     };
     doFetch();
 
-    const es = new globalThis.EventSource(`/api/events?run_id=${runId}`);
+    const es = new globalThis.EventSource(`/api/events?conversation_id=${conversationId}`);
 
     es.addEventListener("open", () => {
       if (!mountedRef.current) return;
@@ -69,7 +69,7 @@ export function useWorkflowStream(runId: number | null) {
       mountedRef.current = false;
       es.close();
     };
-  }, [runId]);
+  }, [conversationId]);
 
   return {
     state,

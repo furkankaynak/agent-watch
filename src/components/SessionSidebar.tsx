@@ -1,49 +1,85 @@
-import type { Run } from "../hooks/useRuns";
+import { useState } from "react";
+import type { Session } from "../hooks/useSessions";
 
 type Props = {
-  runs: Run[];
-  selectedRunId: number | null;
-  activeRunId: number | null;
-  onSelect: (id: number) => void;
+  sessions: Session[];
+  selectedSessionId: string | null;
+  activeSessionId: string | null;
+  onSelect: (id: string) => void;
 };
 
-export function SessionSidebar({ runs, selectedRunId, activeRunId, onSelect }: Props) {
-  if (runs.length === 0) {
+function shortId(id: string): string {
+  return id.length > 8 ? id.slice(0, 8) : id;
+}
+
+function formatDate(iso: string): string {
+  const d = new Date(iso);
+  return d.toLocaleDateString([], { month: "short", day: "numeric" }) +
+    " " + d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
+
+export function SessionSidebar({ sessions, selectedSessionId, activeSessionId, onSelect }: Props) {
+  const [collapsed, setCollapsed] = useState(false);
+
+  if (collapsed) {
     return (
-      <aside className="session-sidebar">
-        <h2 className="session-sidebar-title">Sessions</h2>
-        <p className="session-sidebar-empty">No sessions yet</p>
+      <aside className="session-sidebar session-sidebar--collapsed">
+        <button
+          className="session-sidebar__toggle"
+          onClick={() => setCollapsed(false)}
+          title="Expand sessions"
+        >
+          &#8250;
+        </button>
       </aside>
     );
   }
 
   return (
     <aside className="session-sidebar">
-      <h2 className="session-sidebar-title">Sessions</h2>
-      <ul className="session-sidebar-list">
-        {runs.map((run) => (
-          <li
-            key={run.id}
-            className={`session-sidebar-item${
-              run.id === selectedRunId ? " selected" : ""
-            }${run.id === activeRunId ? " active" : ""}`}
-            onClick={() => onSelect(run.id)}
-          >
-            <span className={`session-status-dot ${run.status}`} />
-            <span className="session-label">
-              {run.label ?? `Run #${run.id}`}
-            </span>
-            <span className="session-time">
-              {formatTime(run.started_at)}
-            </span>
-          </li>
-        ))}
-      </ul>
+      <div className="session-sidebar__header">
+        <h2 className="session-sidebar-title">Sessions</h2>
+        <button
+          className="session-sidebar__toggle"
+          onClick={() => setCollapsed(true)}
+          title="Collapse sessions"
+        >
+          &#8249;
+        </button>
+      </div>
+
+      {sessions.length === 0 ? (
+        <p className="session-sidebar-empty">No sessions yet</p>
+      ) : (
+        <ul className="session-sidebar-list">
+          {sessions.map((session) => {
+            const isActive = session.conversation_id === activeSessionId;
+            const isSelected = session.conversation_id === selectedSessionId;
+            return (
+              <li
+                key={session.conversation_id}
+                className={`session-sidebar-item${isSelected ? " selected" : ""}${isActive ? " active" : ""}`}
+                onClick={() => onSelect(session.conversation_id)}
+              >
+                <span className={`session-status-dot ${isActive ? "running" : session.status === "ended" ? "completed" : ""}`} />
+                <div className="session-sidebar-item__content">
+                  <span className="session-label">{shortId(session.conversation_id)}</span>
+                  {session.model && (
+                    <span className="session-model">{session.model}</span>
+                  )}
+                </div>
+                <div className="session-sidebar-item__meta">
+                  {isActive ? (
+                    <span className="live-badge">LIVE</span>
+                  ) : (
+                    <span className="session-time">{formatDate(session.started_at)}</span>
+                  )}
+                </div>
+              </li>
+            );
+          })}
+        </ul>
+      )}
     </aside>
   );
-}
-
-function formatTime(iso: string): string {
-  const d = new Date(iso);
-  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
 }

@@ -28,11 +28,12 @@ type LogEventRecord = {
 
 function insertEventAndProcess(event: LogEventRecord): void {
   const db = getDb();
+  const conversationId = event.fields.conversation_id ?? null;
   const info = db.prepare(
-    "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
+    "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw, conversation_id) VALUES (?, ?, ?, ?, ?, ?)"
   ).run(
     event.lineNumber, event.timestamp, event.eventType,
-    JSON.stringify(event.fields), event.raw
+    JSON.stringify(event.fields), event.raw, conversationId
   );
   processEvent(db, event as Parameters<typeof processEvent>[1], info.lastInsertRowid as number);
 }
@@ -107,11 +108,48 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return;
   }
 
-  if (url.pathname === "/api/snapshot") {
+  if (url.pathname === "/api/sessions") {
     const db = getDb();
     const rows = db.prepare(
-      "SELECT id, line_number, timestamp, event_type, fields FROM raw_events ORDER BY id LIMIT 5000"
+      `SELECT s.*, (
+         SELECT json_group_array(DISTINCT a.run_id)
+         FROM agents a WHERE a.conversation_id = s.conversation_id
+       ) as run_ids
+       FROM sessions s ORDER BY s.started_at DESC`
     ).all();
+    const sessions = (rows as any[]).map((row: any) => ({
+      conversation_id: row.conversation_id,
+      status: row.status,
+      started_at: row.started_at,
+      ended_at: row.ended_at,
+      model: row.model,
+      cursor_version: row.cursor_version,
+      workspace_roots: row.workspace_roots,
+      run_ids: JSON.parse(row.run_ids ?? "[]"),
+    }));
+    writeJson(response, 200, sessions);
+    return;
+  }
+
+  if (url.pathname === "/api/snapshot") {
+    const db = getDb();
+    const conversationId = url.searchParams.get("conversation_id");
+    const runId = url.searchParams.get("run_id");
+
+    let rows;
+    if (conversationId) {
+      rows = db.prepare(
+        "SELECT id, line_number, timestamp, event_type, fields FROM raw_events WHERE conversation_id = ? ORDER BY id LIMIT 5000"
+      ).all(conversationId);
+    } else if (runId) {
+      rows = db.prepare(
+        "SELECT id, line_number, timestamp, event_type, fields FROM raw_events WHERE run_id = ? ORDER BY id LIMIT 5000"
+      ).all(Number(runId));
+    } else {
+      rows = db.prepare(
+        "SELECT id, line_number, timestamp, event_type, fields FROM raw_events ORDER BY id LIMIT 5000"
+      ).all();
+    }
 
     const events = (rows as any[]).map((row: any) => {
       const fields = JSON.parse(row.fields);
@@ -216,6 +254,10 @@ function writeJson(response: ServerResponse, statusCode: number, body: unknown) 
 }
 
 function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
+  const url = new URL(request.url ?? "/", "http://localhost");
+  const conversationId = url.searchParams.get("conversation_id");
+  const runId = url.searchParams.get("run_id");
+
   response.writeHead(200, {
     ...corsHeaders,
     "Cache-Control": "no-cache, no-transform",
@@ -228,13 +270,22 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
   let closed = false;
   let lastEventId = 0;
 
+  const query = conversationId
+    ? db.prepare("SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id > ? AND conversation_id = ? ORDER BY id")
+    : runId
+      ? db.prepare("SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id > ? AND run_id = ? ORDER BY id")
+      : db.prepare("SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id > ? ORDER BY id");
+
   const pollTimer = setInterval(() => {
     if (closed) return;
 
     const db = getDb();
-    const rows = db.prepare(
-      "SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id > ? ORDER BY id"
-    ).all(lastEventId);
+    const params = conversationId
+      ? [lastEventId, conversationId]
+      : runId
+        ? [lastEventId, Number(runId)]
+        : [lastEventId];
+    const rows = query.all(...params);
 
     for (const row of rows as any[]) {
       const fields = JSON.parse(row.fields);

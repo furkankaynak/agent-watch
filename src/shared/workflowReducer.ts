@@ -258,16 +258,15 @@ function applySubagentStopHook(state: WorkflowState, event: LogEvent): WorkflowS
     return bound.state;
   }
 
-  const hookStatus = event.fields.status;
+  const hookStatus = event.fields.status ?? "completed";
 
   return updateAgent(bound.state, bound.agentId, (agent) => ({
     ...agent,
     lastSeenAt: eventTime(event),
     hookEvents: appendUnique(agent.hookEvents, "subagentStop"),
     status: hookStatus === "completed" ? "completed"
-      : hookStatus === "error" ? "failed"
-      : hookStatus === "aborted" ? "failed"
-      : agent.status
+      : hookStatus === "error" || hookStatus === "aborted" ? "failed"
+      : "completed"
   }));
 }
 
@@ -278,7 +277,7 @@ function applyStopHook(state: WorkflowState, event: LogEvent): WorkflowState {
     return bound.state;
   }
 
-  const hookStatus = event.fields.status;
+  const hookStatus = event.fields.status ?? "completed";
 
   return updateAgent(bound.state, bound.agentId, (agent) => ({
     ...agent,
@@ -286,7 +285,7 @@ function applyStopHook(state: WorkflowState, event: LogEvent): WorkflowState {
     hookEvents: appendUnique(agent.hookEvents, "stop"),
     status: hookStatus === "completed" ? "completed"
       : hookStatus === "aborted" || hookStatus === "error" ? "failed"
-      : agent.status
+      : "completed"
   }));
 }
 
@@ -441,6 +440,11 @@ function sessionEndStatus(agent: AgentNode, finalStatus: string | undefined): Ag
 
   if (finalStatus === "generating") {
     return agent.status === "idle" ? "idle" : activeStatus(agent.status);
+  }
+
+  // sessionEnd hook from Cursor — no final_status field, always terminal
+  if (!finalStatus) {
+    return "completed";
   }
 
   return agent.status;

@@ -5,6 +5,7 @@ const HOOK_TO_EVENT_TYPE: Record<string, string> = {
   postToolUse: "tool_done",
   postToolUseFailure: "tool_done",
   subagentStart: "subagent_start",
+  sessionEnd: "session_end",
 };
 
 const SESSION_HOOKS = new Set(["sessionStart", "sessionEnd"]);
