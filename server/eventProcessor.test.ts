@@ -520,4 +520,204 @@ describe("eventProcessor", () => {
     expect(allRuns[1].status).toBe("running");
     expect(allRuns[1].id).not.toBe(run1.id);
   });
+
+  it("marks agent completed on hook_event subagentStop", async () => {
+    const { processEvent } = await import("./eventProcessor");
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 1,
+        eventType: "tool_start",
+        fields: {
+          tool_name: "Task",
+          tool_use_id: "agent_1",
+          conversation_id: "conv1",
+          input_subagent_type: "agent",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 2,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        eventType: "subagent_start",
+        fields: {
+          subagent_id: "agent_1",
+          conversation_id: "conv2",
+          generation_id: "gen1",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 3,
+        timestamp: "2026-06-04T00:00:02.000Z",
+        eventType: "hook_event",
+        fields: {
+          hook_event_name: "subagentStop",
+          status: "completed",
+          conversation_id: "conv2",
+          generation_id: "gen1",
+        },
+      }),
+    );
+
+    const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get("agent_1") as any;
+    expect(agent.status).toBe("completed");
+  });
+
+  it("marks agent failed on hook_event stop", async () => {
+    const { processEvent } = await import("./eventProcessor");
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 1,
+        eventType: "tool_start",
+        fields: {
+          tool_name: "Task",
+          tool_use_id: "agent_s",
+          conversation_id: "conv1",
+          input_subagent_type: "agent",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 2,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        eventType: "subagent_start",
+        fields: {
+          subagent_id: "agent_s",
+          conversation_id: "conv_s",
+          generation_id: "gen_s",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 3,
+        timestamp: "2026-06-04T00:00:02.000Z",
+        eventType: "hook_event",
+        fields: {
+          hook_event_name: "stop",
+          status: "error",
+          conversation_id: "conv_s",
+          generation_id: "gen_s",
+        },
+      }),
+    );
+
+    const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get("agent_s") as any;
+    expect(agent.status).toBe("failed");
+  });
+
+  it("completes run when root agent receives hook_event stop completed", async () => {
+    const { processEvent } = await import("./eventProcessor");
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 1,
+        eventType: "tool_start",
+        fields: {
+          tool_name: "Task",
+          tool_use_id: "root_h",
+          conversation_id: "conv_h",
+          input_subagent_type: "agent",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 2,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        eventType: "subagent_start",
+        fields: {
+          subagent_id: "root_h",
+          conversation_id: "conv_hs",
+          generation_id: "gen_hs",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 3,
+        timestamp: "2026-06-04T00:00:02.000Z",
+        eventType: "hook_event",
+        fields: {
+          hook_event_name: "stop",
+          status: "completed",
+          conversation_id: "conv_hs",
+          generation_id: "gen_hs",
+        },
+      }),
+    );
+
+    const run = db.prepare("SELECT * FROM runs").get() as any;
+    expect(run.status).toBe("completed");
+  });
+
+  it("touches agent on generic hook_event without changing status", async () => {
+    const { processEvent } = await import("./eventProcessor");
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 1,
+        eventType: "tool_start",
+        fields: {
+          tool_name: "Task",
+          tool_use_id: "agent_g",
+          conversation_id: "conv_g",
+          input_subagent_type: "agent",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 2,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        eventType: "subagent_start",
+        fields: {
+          subagent_id: "agent_g",
+          conversation_id: "conv_gs",
+          generation_id: "gen_gs",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 3,
+        timestamp: "2026-06-04T00:00:02.000Z",
+        eventType: "hook_event",
+        fields: {
+          hook_event_name: "beforeReadFile",
+          conversation_id: "conv_gs",
+          generation_id: "gen_gs",
+        },
+      }),
+    );
+
+    const agent = db.prepare("SELECT * FROM agents WHERE id = ?").get("agent_g") as any;
+    expect(agent.status).toBe("running");
+    expect(agent.last_seen_at).toBe("2026-06-04T00:00:02.000Z");
+  });
 });

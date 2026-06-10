@@ -1,4 +1,5 @@
 import type { AgentNode } from "../shared/workflowTypes";
+import { hookLabel, hookCategory } from "../shared/hookTypes";
 
 type Props = {
   agent: AgentNode | undefined;
@@ -100,6 +101,22 @@ export function InspectorPanel({ agent }: Props) {
               <li key={id}>{name}</li>
             ))}
           </ul>
+        </div>
+      )}
+
+      {agent.hookEvents.length > 0 && (
+        <div className="inspector__section">
+          <h4>Hook Events</h4>
+          <div className="inspector__chips">
+            {agent.hookEvents.map((h) => (
+              <span
+                key={h}
+                className={`inspector__chip inspector__chip--hook inspector__chip--hook-${hookCategory(h)}`}
+              >
+                {hookLabel(h)}
+              </span>
+            ))}
+          </div>
         </div>
       )}
 

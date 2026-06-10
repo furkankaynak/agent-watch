@@ -71,10 +71,24 @@ export function initSchema(database: Database.Database): void {
       raw TEXT NOT NULL
     );
 
+    CREATE TABLE IF NOT EXISTS sessions (
+      conversation_id TEXT PRIMARY KEY,
+      status TEXT NOT NULL DEFAULT 'active',
+      started_at TEXT NOT NULL,
+      ended_at TEXT,
+      model TEXT,
+      cursor_version TEXT,
+      workspace_roots TEXT
+    );
+
     CREATE TABLE IF NOT EXISTS server_state (
       key TEXT PRIMARY KEY,
       value TEXT NOT NULL
     );
+
+    CREATE INDEX IF NOT EXISTS idx_agents_run_status ON agents(run_id, status);
+    CREATE INDEX IF NOT EXISTS idx_agents_conversation ON agents(conversation_id);
+    CREATE INDEX IF NOT EXISTS idx_tool_calls_agent_status ON tool_calls(agent_id, status);
   `);
 }
 

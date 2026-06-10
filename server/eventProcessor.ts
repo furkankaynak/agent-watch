@@ -8,7 +8,34 @@ const unboundAgentIds: string[] = [];
 let currentRunId: number | null = null;
 let lastActivityAt = 0;
 
-export function processEvent(db: Database.Database, event: LogEvent): void {
+export function getCurrentRunId(): number | null {
+  return currentRunId;
+}
+
+export function restoreRunState(db: Database.Database): void {
+  const row = db
+    .prepare("SELECT value FROM server_state WHERE key = ?")
+    .get("current_run_id") as { value: string } | undefined;
+  if (row) {
+    const id = Number(row.value);
+    if (!isNaN(id)) {
+      currentRunId = id;
+    }
+  }
+}
+
+function persistRunId(db: Database.Database): void {
+  db.prepare("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)").run(
+    "current_run_id",
+    String(currentRunId),
+  );
+}
+
+function clearRunId(db: Database.Database): void {
+  db.prepare("DELETE FROM server_state WHERE key = ?").run("current_run_id");
+}
+
+export function processEvent(db: Database.Database, event: LogEvent, rawEventId?: number): void {
   const now = Date.now();
   if (now - lastActivityAt > 60_000) {
     checkStaleRun(db, now);
@@ -17,32 +44,100 @@ export function processEvent(db: Database.Database, event: LogEvent): void {
 
   switch (event.eventType) {
     case "tool_start":
-      return handleToolStart(db, event);
+      handleToolStart(db, event);
+      break;
     case "subagent_start":
-      return handleSubagentStart(db, event);
+      handleSubagentStart(db, event);
+      break;
     case "tool_done":
-      return handleToolDone(db, event);
+      handleToolDone(db, event);
+      break;
     case "skill_read":
     case "rule_read":
     case "decisions_read":
-      return handleChipEvent(db, event);
+      handleChipEvent(db, event);
+      break;
     case "session_end":
-      return handleSessionEnd(db, event);
+      handleSessionEnd(db, event);
+      break;
+    case "hook_event":
+      handleHookEvent(db, event);
+      break;
     default:
-      return handleDefault(db, event);
+      handleDefault(db, event);
+      break;
+  }
+
+  if (rawEventId !== undefined && currentRunId !== null) {
+    db.prepare("UPDATE raw_events SET run_id = ? WHERE id = ?").run(currentRunId, rawEventId);
   }
 }
+
+// ── helper queries ────────────────────────────────────────────
+
+function touchAgent(db: Database.Database, agentId: string, timestamp: string): void {
+  db.prepare(
+    `UPDATE agents SET last_seen_at = ?,
+       status = CASE WHEN status IN ('completed', 'failed') THEN status ELSE 'running' END
+     WHERE id = ?`,
+  ).run(timestamp, agentId);
+}
+
+function completeAgent(
+  db: Database.Database,
+  agentId: string,
+  status: string,
+  timestamp: string,
+  isTerminal: boolean,
+): void {
+  db.prepare(
+    "UPDATE agents SET status = ?, last_seen_at = ?, completed_at = ? WHERE id = ?",
+  ).run(status, timestamp, isTerminal ? timestamp : null, agentId);
+}
+
+function setRunCompleted(db: Database.Database, runId: number, timestamp: string): void {
+  db.prepare(
+    "UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?",
+  ).run(timestamp, runId);
+}
+
+function isRootAgentForRun(
+  db: Database.Database,
+  runId: number,
+  agentId: string,
+): boolean {
+  const run = db
+    .prepare("SELECT root_agent_id FROM runs WHERE id = ?")
+    .get(runId) as any;
+  return run?.root_agent_id === agentId;
+}
+
+function tryCompleteRun(db: Database.Database, agentId: string, timestamp: string): void {
+  if (currentRunId === null) return;
+  if (isRootAgentForRun(db, currentRunId, agentId)) {
+    setRunCompleted(db, currentRunId, timestamp);
+    clearRunId(db);
+    currentRunId = null;
+  }
+}
+
+// ── event handlers ────────────────────────────────────────────
 
 function ensureRun(db: Database.Database): number {
   if (currentRunId === null) {
     const info = db
-      .prepare(
-        "INSERT INTO runs (label, status, started_at) VALUES (?, 'running', ?)",
-      )
+      .prepare("INSERT INTO runs (label, status, started_at) VALUES (?, 'running', ?)")
       .run(null, new Date().toISOString());
     currentRunId = info.lastInsertRowid as number;
+    persistRunId(db);
   }
   return currentRunId;
+}
+
+function resolveHookStatus(hookStatus: string | undefined): string | null {
+  if (hookStatus === "completed") return "completed";
+  if (hookStatus === "error" || hookStatus === "aborted") return "failed";
+  return null;
 }
 
 function bindConversation(
@@ -74,7 +169,6 @@ function bindConversation(
     return { agentId: fallback };
   }
 
-  // Last resort: search agents table by conversation_id
   if (db) {
     const agent = db
       .prepare("SELECT id FROM agents WHERE conversation_id = ? LIMIT 1")
@@ -116,20 +210,14 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
       event.timestamp,
     );
 
-    const run = db
-      .prepare("SELECT root_agent_id FROM runs WHERE id = ?")
-      .get(runId) as any;
-    if (!run.root_agent_id) {
-      db.prepare("UPDATE runs SET root_agent_id = ? WHERE id = ?").run(
-        agentId,
-        runId,
-      );
+    if (!isRootAgentForRun(db, runId, agentId)) {
+      db.prepare("UPDATE runs SET root_agent_id = ? WHERE id = ? AND root_agent_id IS NULL").run(agentId, runId);
     }
 
     return;
   }
 
-    const bound = bindConversation(event, db);
+  const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   const agentId = bound.agentId;
@@ -141,11 +229,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
      VALUES (?, ?, ?, 'started', ?)`,
   ).run(toolUseId, agentId, toolName, event.timestamp);
 
-  db.prepare(
-    `UPDATE agents SET last_seen_at = ?,
-       status = CASE WHEN status IN ('completed', 'failed') THEN status ELSE 'running' END
-     WHERE id = ?`,
-  ).run(event.timestamp, agentId);
+  touchAgent(db, agentId, event.timestamp);
 }
 
 function handleSubagentStart(db: Database.Database, event: LogEvent): void {
@@ -153,7 +237,7 @@ function handleSubagentStart(db: Database.Database, event: LogEvent): void {
   if (!subagentId) return;
 
   const agent = db
-    .prepare("SELECT * FROM agents WHERE id = ?")
+    .prepare("SELECT agent_type FROM agents WHERE id = ?")
     .get(subagentId) as any;
   if (!agent) return;
 
@@ -185,12 +269,11 @@ function handleToolDone(db: Database.Database, event: LogEvent): void {
   const ok = event.fields.ok === "true" ? 1 : 0;
 
   const toolCall = db
-    .prepare("SELECT * FROM tool_calls WHERE id = ?")
+    .prepare("SELECT started_at FROM tool_calls WHERE id = ?")
     .get(toolUseId) as any;
   let durationMs: number | null = null;
   if (toolCall?.started_at) {
-    durationMs =
-      Date.parse(event.timestamp) - Date.parse(toolCall.started_at);
+    durationMs = Date.parse(event.timestamp) - Date.parse(toolCall.started_at);
   }
 
   const errorMessage =
@@ -205,6 +288,11 @@ function handleToolDone(db: Database.Database, event: LogEvent): void {
      WHERE id = ?`,
   ).run(event.timestamp, durationMs, ok, errorMessage, toolUseId);
 
+  if (ok === 0) {
+    completeAgent(db, bound.agentId, "failed", event.timestamp, true);
+    return;
+  }
+
   const activeToolCount = (
     db
       .prepare(
@@ -213,17 +301,11 @@ function handleToolDone(db: Database.Database, event: LogEvent): void {
       .get(bound.agentId) as any
   ).count;
 
-  if (ok === 0) {
-    db.prepare(
-      "UPDATE agents SET status = 'failed', last_seen_at = ? WHERE id = ?",
-    ).run(event.timestamp, bound.agentId);
-  } else {
-    const newStatus = activeToolCount > 0 ? "running" : "idle";
-    db.prepare(
-      `UPDATE agents SET status = ?, last_seen_at = ?
-       WHERE id = ? AND status NOT IN ('completed', 'failed')`,
-    ).run(newStatus, event.timestamp, bound.agentId);
-  }
+  const newStatus = activeToolCount > 0 ? "running" : "idle";
+  db.prepare(
+    `UPDATE agents SET status = ?, last_seen_at = ?
+     WHERE id = ? AND status NOT IN ('completed', 'failed')`,
+  ).run(newStatus, event.timestamp, bound.agentId);
 }
 
 function handleChipEvent(db: Database.Database, event: LogEvent): void {
@@ -250,11 +332,7 @@ function handleChipEvent(db: Database.Database, event: LogEvent): void {
     "INSERT OR IGNORE INTO agent_chips (agent_id, chip_type, chip_value, seen_at) VALUES (?, ?, ?, ?)",
   ).run(bound.agentId, chipType, chipValue, event.timestamp);
 
-  db.prepare(
-    `UPDATE agents SET last_seen_at = ?,
-       status = CASE WHEN status IN ('completed', 'failed') THEN status ELSE 'running' END
-     WHERE id = ?`,
-  ).run(event.timestamp, bound.agentId);
+  touchAgent(db, bound.agentId, event.timestamp);
 }
 
 function handleSessionEnd(db: Database.Database, event: LogEvent): void {
@@ -277,28 +355,53 @@ function handleSessionEnd(db: Database.Database, event: LogEvent): void {
     newStatus = agent.status === "running" || agent.status === "incoming" ? "running" : agent.status;
   }
 
-  const isTerminal =
-    newStatus === "completed" || newStatus === "failed";
+  const isTerminal = newStatus === "completed" || newStatus === "failed";
+  completeAgent(db, bound.agentId, newStatus, event.timestamp, isTerminal);
 
-  db.prepare(
-    `UPDATE agents SET status = ?, last_seen_at = ?, completed_at = ? WHERE id = ?`,
-  ).run(
-    newStatus,
-    event.timestamp,
-    isTerminal ? event.timestamp : null,
-    bound.agentId,
-  );
+  if (isTerminal) {
+    tryCompleteRun(db, bound.agentId, event.timestamp);
+  }
+}
 
-  if (currentRunId !== null && isTerminal) {
-    const run = db
-      .prepare("SELECT root_agent_id FROM runs WHERE id = ?")
-      .get(currentRunId) as any;
-    if (run?.root_agent_id === bound.agentId) {
-      db.prepare(
-        "UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?",
-      ).run(event.timestamp, currentRunId);
-      currentRunId = null;
-    }
+function handleHookEvent(db: Database.Database, event: LogEvent): void {
+  const hookName = event.fields.hook_event_name;
+  if (!hookName) return;
+
+  switch (hookName) {
+    case "subagentStop":
+      handleSubagentStop(db, event);
+      break;
+    case "stop":
+      handleStopHook(db, event);
+      break;
+    default:
+      handleDefault(db, event);
+      break;
+  }
+}
+
+function handleSubagentStop(db: Database.Database, event: LogEvent): void {
+  const bound = bindConversation(event, db);
+  if (!bound.agentId) return;
+
+  const newStatus = resolveHookStatus(event.fields.status);
+  if (!newStatus) return;
+
+  completeAgent(db, bound.agentId, newStatus, event.timestamp, true);
+}
+
+function handleStopHook(db: Database.Database, event: LogEvent): void {
+  const bound = bindConversation(event, db);
+  if (!bound.agentId) return;
+
+  const newStatus = resolveHookStatus(event.fields.status);
+  if (!newStatus) return;
+
+  const isTerminal = newStatus === "completed" || newStatus === "failed";
+  completeAgent(db, bound.agentId, newStatus, event.timestamp, isTerminal);
+
+  if (isTerminal) {
+    tryCompleteRun(db, bound.agentId, event.timestamp);
   }
 }
 
@@ -306,27 +409,22 @@ function handleDefault(db: Database.Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
-  db.prepare(
-    `UPDATE agents SET last_seen_at = ?,
-       status = CASE WHEN status IN ('completed', 'failed') THEN status ELSE 'running' END
-     WHERE id = ?`,
-  ).run(event.timestamp, bound.agentId);
+  touchAgent(db, bound.agentId, event.timestamp);
 }
 
 function checkStaleRun(db: Database.Database, now: number): void {
-  if (currentRunId !== null) {
-    const activeAgents = db
-      .prepare(
-        "SELECT COUNT(*) as count FROM agents WHERE run_id = ? AND status NOT IN ('completed', 'failed')",
-      )
-      .get(currentRunId) as any;
+  if (currentRunId === null) return;
 
-    if (activeAgents.count === 0) {
-      db.prepare(
-        "UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?",
-      )      .run(new Date(now).toISOString(), currentRunId);
-      currentRunId = null;
-    }
+  const activeAgents = db
+    .prepare(
+      "SELECT COUNT(*) as count FROM agents WHERE run_id = ? AND status NOT IN ('completed', 'failed')",
+    )
+    .get(currentRunId) as any;
+
+  if (activeAgents.count === 0) {
+    setRunCompleted(db, currentRunId, new Date(now).toISOString());
+    clearRunId(db);
+    currentRunId = null;
   }
 }
 

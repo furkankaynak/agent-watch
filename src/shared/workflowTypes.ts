@@ -19,6 +19,7 @@ export type AgentNode = {
   lastAction?: string;
   lastSeenAt: number;
   errors: string[];
+  hookEvents: string[];
 };
 
 export type TaskCall = {

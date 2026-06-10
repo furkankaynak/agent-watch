@@ -360,6 +360,10 @@ body {
   color: #dc2626;
 }
 
+.inspector__chip--hook-agent { background: #fdf4ff; color: #a21caf; }
+.inspector__chip--hook-tab { background: #f0fdf4; color: #15803d; }
+.inspector__chip--hook-lifecycle { background: #fef3c7; color: #b45309; }
+
 /* ---- Event Feed ---- */
 
 .event-feed {
@@ -418,12 +422,75 @@ body {
 .event-feed__type--file_edit { background: #fef2f2; color: #dc2626; }
 .event-feed__type--shell_start { background: #fefce8; color: #ca8a04; }
 .event-feed__type--shell_done { background: #f0fdf4; color: #16a34a; }
+.event-feed__type--hook_event { background: #fdf4ff; color: #a21caf; }
 
 .event-feed__msg {
   color: #374151;
   white-space: nowrap;
   overflow: hidden;
   text-overflow: ellipsis;
+}
+
+.event-feed__item--expandable {
+  cursor: pointer;
+}
+
+.event-feed__item--expandable:hover {
+  background: #f9fafb;
+}
+
+.event-feed__chevron {
+  margin-left: auto;
+  color: #9ca3af;
+  font-size: 0.7rem;
+  transition: transform 0.15s;
+}
+
+.event-feed__chevron--open {
+  transform: rotate(90deg);
+}
+
+.event-feed__detail {
+  padding: 0.4rem 0.6rem;
+  border-bottom: 1px solid #f3f4f6;
+  background: #fafafa;
+  font-size: 0.6rem;
+}
+
+.event-feed__load-btn {
+  background: #f3f4f6;
+  border: 1px solid #e5e7eb;
+  border-radius: 3px;
+  padding: 0.1rem 0.4rem;
+  font-size: 0.58rem;
+  cursor: pointer;
+  color: #6b7280;
+}
+
+.event-feed__load-btn:hover {
+  background: #e5e7eb;
+}
+
+.event-feed__detail-field {
+  margin-bottom: 0.3rem;
+}
+
+.event-feed__detail-key {
+  font-weight: 600;
+  color: #6b7280;
+  margin-bottom: 0.1rem;
+}
+
+.event-feed__detail-value {
+  margin: 0.1rem 0 0;
+  white-space: pre-wrap;
+  word-break: break-all;
+  max-height: 200px;
+  overflow-y: auto;
+  background: #f3f4f6;
+  padding: 0.3rem;
+  border-radius: 3px;
+  color: #374151;
 }
 
 /* ---- Session Sidebar ---- */

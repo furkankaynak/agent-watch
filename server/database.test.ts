@@ -19,7 +19,7 @@ describe("database schema", () => {
       .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
       .all() as { name: string }[];
     expect(tables.map((t) => t.name)).toEqual(
-      expect.arrayContaining(["runs", "agents", "tool_calls", "agent_chips", "raw_events"])
+      expect.arrayContaining(["runs", "agents", "tool_calls", "agent_chips", "raw_events", "sessions", "server_state"])
     );
   });
 

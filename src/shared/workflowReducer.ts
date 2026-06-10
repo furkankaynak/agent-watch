@@ -1,4 +1,5 @@
 import type { LogEvent } from "./logTypes";
+import { isHookEvent } from "./logTypes";
 import type { AgentNode, AgentStatus, TaskCall, WorkflowState } from "./workflowTypes";
 
 export type { AgentNode, AgentStatus, TaskCall, WorkflowState } from "./workflowTypes";
@@ -41,6 +42,8 @@ export function applyWorkflowEvent(state: WorkflowState, event: LogEvent): Workf
       return applyChipEvent(nextState, event, "decisions");
     case "session_end":
       return applySessionEnd(nextState, event);
+    case "hook_event":
+      return applyHookEvent(nextState, event);
     default:
       return touchBoundAgent(nextState, event);
   }
@@ -120,7 +123,8 @@ function createTaskAgent(
     decisions: [],
     activeTools: {},
     lastSeenAt: eventTime(event),
-    errors: []
+    errors: [],
+    hookEvents: []
   };
   const taskCall: TaskCall = {
     id,
@@ -230,6 +234,78 @@ function applySessionEnd(state: WorkflowState, event: LogEvent): WorkflowState {
     ...agent,
     lastSeenAt: eventTime(event),
     status: sessionEndStatus(agent, event.fields.final_status)
+  }));
+}
+
+function applyHookEvent(state: WorkflowState, event: LogEvent): WorkflowState {
+  const hookName = event.fields.hook_event_name;
+  if (!hookName) return state;
+
+  switch (hookName) {
+    case "subagentStop":
+      return applySubagentStopHook(state, event);
+    case "stop":
+      return applyStopHook(state, event);
+    default:
+      return touchBoundAgentWithHookEvent(state, event, hookName);
+  }
+}
+
+function applySubagentStopHook(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+
+  if (!bound.agentId) {
+    return bound.state;
+  }
+
+  const hookStatus = event.fields.status;
+
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    lastSeenAt: eventTime(event),
+    hookEvents: appendUnique(agent.hookEvents, "subagentStop"),
+    status: hookStatus === "completed" ? "completed"
+      : hookStatus === "error" ? "failed"
+      : hookStatus === "aborted" ? "failed"
+      : agent.status
+  }));
+}
+
+function applyStopHook(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+
+  if (!bound.agentId) {
+    return bound.state;
+  }
+
+  const hookStatus = event.fields.status;
+
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    lastSeenAt: eventTime(event),
+    hookEvents: appendUnique(agent.hookEvents, "stop"),
+    status: hookStatus === "completed" ? "completed"
+      : hookStatus === "aborted" || hookStatus === "error" ? "failed"
+      : agent.status
+  }));
+}
+
+function touchBoundAgentWithHookEvent(
+  state: WorkflowState,
+  event: LogEvent,
+  hookName: string
+): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+
+  if (!bound.agentId) {
+    return bound.state;
+  }
+
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    lastSeenAt: eventTime(event),
+    hookEvents: appendUnique(agent.hookEvents, hookName),
+    status: activeStatus(agent.status)
   }));
 }
 

@@ -1,48 +1,24 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import type Database from "better-sqlite3";
-import {
-  createLogFileCursor,
-  formatActivityEvent,
-  formatHeartbeat,
-  readAppendedLogEvents,
-  readLogSnapshot,
-  resolveActivityLogPath,
-  type LogFileCursor
-} from "./logFile";
+import type { LogEvent } from "../src/shared/logTypes";
 import { getDb } from "./database";
-import { processEvent } from "./eventProcessor";
+import { processEvent, restoreRunState } from "./eventProcessor";
+import { setupHooks } from "./setupHooks";
+import { mapHookToLogEvent, isSessionStartHook, isSessionEndHook } from "./hookMapper";
+import { stripHeavyFields } from "./eventFilter";
 
 const HEARTBEAT_MS = 15_000;
 const POLL_MS = 1_000;
 
-export const ACTIVITY_LOG_PATH = resolveActivityLogPath();
-
+const PROJECT_ROOT = process.env.PROJECT_ROOT ?? process.cwd();
 const port = Number(process.env.PORT || 4317);
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
-  "Access-Control-Allow-Methods": "GET, OPTIONS",
+  "Access-Control-Allow-Methods": "GET, POST, OPTIONS",
   "Access-Control-Allow-Origin": "*"
 };
 
-let cursor: LogFileCursor | null = null;
-
-async function pollLogFile() {
-  try {
-    cursor ??= await createLogFileCursor(ACTIVITY_LOG_PATH);
-    const result = await readAppendedLogEvents(ACTIVITY_LOG_PATH, cursor);
-    cursor = result.cursor;
-    if (result.events.length > 0) {
-      const db = getDb();
-      insertEvents(db, result.events);
-      stateUpsert(db, "log_cursor_offset", String(cursor.offset));
-    }
-  } catch (error) {
-    console.error("Error polling log file", error);
-  }
-}
-
-type LogEvent = {
+type LogEventRecord = {
   lineNumber: number;
   timestamp: string;
   eventType: string;
@@ -50,36 +26,58 @@ type LogEvent = {
   raw: string;
 };
 
-function insertEvents(db: Database.Database, events: LogEvent[]) {
-  for (const event of events) {
-    db.prepare(
-      "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
-    ).run(
-      event.lineNumber, event.timestamp, event.eventType,
-      JSON.stringify(event.fields), event.raw
-    );
-    processEvent(db, event as any);
-  }
+function insertEventAndProcess(event: LogEventRecord): void {
+  const db = getDb();
+  const info = db.prepare(
+    "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw) VALUES (?, ?, ?, ?, ?)"
+  ).run(
+    event.lineNumber, event.timestamp, event.eventType,
+    JSON.stringify(event.fields), event.raw
+  );
+  processEvent(db, event as Parameters<typeof processEvent>[1], info.lastInsertRowid as number);
 }
 
-function stateUpsert(db: Database.Database, key: string, value: string) {
-  db.prepare("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)").run(key, value);
+function handleSessionStart(event: LogEventRecord): void {
+  const db = getDb();
+  const cid = event.fields.conversation_id;
+  if (!cid) return;
+  db.prepare(
+    `INSERT OR REPLACE INTO sessions (conversation_id, status, started_at, model, cursor_version, workspace_roots)
+     VALUES (?, 'active', ?, ?, ?, ?)`
+  ).run(
+    cid,
+    event.timestamp,
+    event.fields.model ?? null,
+    event.fields.cursor_version ?? null,
+    event.fields.workspace_roots ?? null,
+  );
 }
 
-function stateGet(db: Database.Database, key: string): string | undefined {
-  const row = db.prepare("SELECT value FROM server_state WHERE key = ?").get(key) as { value: string } | undefined;
-  return row?.value;
+function handleSessionEnd(event: LogEventRecord): void {
+  const db = getDb();
+  const cid = event.fields.conversation_id;
+  if (!cid) return;
+  db.prepare(
+    "UPDATE sessions SET status = 'ended', ended_at = ? WHERE conversation_id = ?"
+  ).run(event.timestamp, cid);
+}
+
+function readBody(request: IncomingMessage): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const chunks: Buffer[] = [];
+    request.on("data", (chunk: Buffer) => chunks.push(chunk));
+    request.on("end", () => resolve(Buffer.concat(chunks).toString()));
+    request.on("error", reject);
+  });
 }
 
 const server = createServer((request, response) => {
   void handleRequest(request, response).catch((error: unknown) => {
     console.error("Unhandled request error", error);
-
     if (response.headersSent) {
       response.destroy(error instanceof Error ? error : undefined);
       return;
     }
-
     writeJson(response, 500, { error: "Internal server error" });
   });
 });
@@ -91,6 +89,11 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (request.method === "OPTIONS") {
     response.writeHead(204, corsHeaders);
     response.end();
+    return;
+  }
+
+  if (request.method === "POST" && url.pathname === "/api/ingest") {
+    await handleIngest(request, response);
     return;
   }
 
@@ -107,16 +110,20 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
   if (url.pathname === "/api/snapshot") {
     const db = getDb();
     const rows = db.prepare(
-      "SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events ORDER BY id"
+      "SELECT id, line_number, timestamp, event_type, fields FROM raw_events ORDER BY id LIMIT 5000"
     ).all();
 
-    const events = (rows as any[]).map((row: any) => ({
-      lineNumber: row.line_number,
-      timestamp: row.timestamp,
-      eventType: row.event_type,
-      fields: JSON.parse(row.fields),
-      raw: row.raw,
-    }));
+    const events = (rows as any[]).map((row: any) => {
+      const fields = JSON.parse(row.fields);
+      const { fields: strippedFields, _hasHeavy } = stripHeavyFields(fields);
+      return {
+        lineNumber: row.line_number,
+        timestamp: row.timestamp,
+        eventType: row.event_type,
+        fields: strippedFields,
+        _hasHeavy,
+      };
+    });
 
     writeJson(response, 200, events);
     return;
@@ -124,7 +131,9 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
 
   if (url.pathname === "/api/runs") {
     const db = getDb();
-    const runs = db.prepare("SELECT id, label, status, started_at, ended_at FROM runs ORDER BY id DESC LIMIT 50").all();
+    const runs = db.prepare(
+      "SELECT id, label, status, started_at, ended_at FROM runs ORDER BY id DESC LIMIT 50"
+    ).all();
     writeJson(response, 200, runs);
     return;
   }
@@ -134,7 +143,67 @@ async function handleRequest(request: IncomingMessage, response: ServerResponse)
     return;
   }
 
+  if (url.pathname.startsWith("/api/events/")) {
+    const idStr = url.pathname.slice("/api/events/".length);
+    const id = Number(idStr);
+    if (isNaN(id)) {
+      writeJson(response, 404, { error: "Not found" });
+      return;
+    }
+    const db = getDb();
+    const row = db.prepare(
+      "SELECT id, line_number, timestamp, event_type, fields, raw FROM raw_events WHERE id = ?"
+    ).get(id) as any;
+    if (!row) {
+      writeJson(response, 404, { error: "Not found" });
+      return;
+    }
+    writeJson(response, 200, {
+      id: row.id,
+      lineNumber: row.line_number,
+      timestamp: row.timestamp,
+      eventType: row.event_type,
+      fields: JSON.parse(row.fields),
+      raw: row.raw,
+    });
+    return;
+  }
+
   writeJson(response, 404, { error: "Not found" });
+}
+
+async function handleIngest(request: IncomingMessage, response: ServerResponse) {
+  let body: string;
+  try {
+    body = await readBody(request);
+  } catch {
+    writeJson(response, 400, { error: "Invalid body" });
+    return;
+  }
+
+  let payload: Record<string, unknown>;
+  try {
+    payload = JSON.parse(body);
+  } catch {
+    writeJson(response, 400, { error: "Invalid JSON" });
+    return;
+  }
+
+  const event = mapHookToLogEvent(payload);
+  if (!event) {
+    writeJson(response, 400, { error: "Missing hook_event_name" });
+    return;
+  }
+
+  insertEventAndProcess(event as LogEventRecord);
+
+  if (isSessionStartHook(event)) {
+    handleSessionStart(event as LogEventRecord);
+  } else if (isSessionEndHook(event)) {
+    handleSessionEnd(event as LogEventRecord);
+  }
+
+  writeJson(response, 200, { ok: true });
 }
 
 function writeJson(response: ServerResponse, statusCode: number, body: unknown) {
@@ -168,19 +237,23 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
     ).all(lastEventId);
 
     for (const row of rows as any[]) {
-      const event = {
+      const fields = JSON.parse(row.fields);
+      const { fields: strippedFields, _hasHeavy } = stripHeavyFields(fields);
+      const eventPayload = {
         id: row.id,
         lineNumber: row.line_number,
         timestamp: row.timestamp,
         eventType: row.event_type,
-        fields: JSON.parse(row.fields),
-        raw: row.raw,
+        fields: strippedFields,
+        _hasHeavy,
       };
-      response.write(formatActivityEvent(event));
+      const eventData = `event: activity\ndata: ${JSON.stringify(eventPayload)}\n\n`;
+
+      response.write(eventData);
       lastEventId = row.id;
     }
 
-    response.write(formatHeartbeat());
+    response.write(": ping\n\n");
   }, POLL_MS);
 
   const close = () => {
@@ -192,22 +265,10 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
   response.on("close", close);
 }
 
-// Initialize: load full file into SQLite on first start, then poll for appends
 const db = getDb();
-const hasData = db.prepare("SELECT COUNT(*) as c FROM raw_events").get() as { c: number };
-if (hasData.c === 0) {
-  readLogSnapshot(ACTIVITY_LOG_PATH).then((events) => {
-    if (events.length > 0) {
-      insertEvents(db, events);
-      console.log(`Loaded ${events.length} events from activity.log`);
-    }
-  }).catch((err) => {
-    console.error("Error reading initial log snapshot", err);
-  });
-}
-const filePollTimer = setInterval(() => { void pollLogFile(); }, POLL_MS);
+restoreRunState(db);
 
 server.listen(port, () => {
   console.log(`Agent Office Dashboard server listening on http://localhost:${port}`);
-  console.log(`Activity log: ${ACTIVITY_LOG_PATH}`);
+  void setupHooks(PROJECT_ROOT);
 });
