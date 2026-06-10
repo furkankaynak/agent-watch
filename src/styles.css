@@ -103,147 +103,7 @@ body {
 .connection-badge--offline { color: #ef4444; }
 .connection-badge--offline .connection-dot { background: #ef4444; }
 
-/* ---- Office Board ---- */
 
-.office-board {
-  display: grid;
-  grid-template-columns: repeat(4, 1fr);
-  gap: 0.75rem;
-}
-
-.office-board__empty {
-  grid-column: 1 / -1;
-  text-align: center;
-  padding: 3rem 1rem;
-  color: #6b7280;
-}
-
-.office-board__hint {
-  font-size: 0.82rem;
-  color: #9ca3af;
-}
-
-.board-column {
-  min-width: 0;
-}
-
-.board-column__title {
-  font-size: 0.75rem;
-  font-weight: 700;
-  text-transform: uppercase;
-  letter-spacing: 0.06em;
-  color: #6b7280;
-  margin: 0 0 0.5rem;
-  display: flex;
-  align-items: center;
-  gap: 0.5rem;
-}
-
-.board-column__count {
-  background: #e5e7eb;
-  color: #374151;
-  border-radius: 10px;
-  padding: 0 0.45rem;
-  font-size: 0.65rem;
-  line-height: 1.4;
-}
-
-.board-column__cards {
-  display: flex;
-  flex-direction: column;
-  gap: 0.5rem;
-}
-
-/* ---- Agent Card ---- */
-
-.agent-card {
-  background: #fff;
-  border: 1px solid #e5e7eb;
-  border-radius: 10px;
-  padding: 0.6rem 0.7rem;
-  cursor: pointer;
-  font-size: 0.78rem;
-  transition: border-color 0.15s, box-shadow 0.15s, transform 0.15s;
-  animation: cardSpawn 0.25s ease-out;
-}
-
-.agent-card:hover {
-  border-color: #93c5fd;
-  box-shadow: 0 2px 12px rgba(59, 130, 246, 0.12);
-}
-
-.agent-card--selected {
-  border-color: #3b82f6;
-  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.3);
-}
-
-.agent-card--failed {
-  border-color: #fca5a5;
-  animation: shake 0.3s ease;
-}
-
-.agent-card--completed {
-  opacity: 0.7;
-}
-
-.agent-card--stale {
-  opacity: 0.6;
-}
-
-.agent-card__header {
-  display: flex;
-  align-items: center;
-  gap: 0.4rem;
-  margin-bottom: 0.25rem;
-}
-
-.agent-card__label {
-  font-weight: 700;
-  font-size: 0.82rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agent-card__type {
-  color: #6b7280;
-  font-size: 0.68rem;
-  background: #f3f4f6;
-  border-radius: 4px;
-  padding: 0 4px;
-  line-height: 1.5;
-  margin-left: auto;
-  flex-shrink: 0;
-}
-
-.agent-card__parent,
-.agent-card__model,
-.agent-card__desc,
-.agent-card__action {
-  color: #6b7280;
-  font-size: 0.7rem;
-  margin-bottom: 0.15rem;
-  white-space: nowrap;
-  overflow: hidden;
-  text-overflow: ellipsis;
-}
-
-.agent-card__action-label {
-  color: #9ca3af;
-}
-
-.agent-card__errors {
-  color: #ef4444;
-  font-size: 0.72rem;
-  font-weight: 600;
-  margin-top: 0.25rem;
-}
-
-.agent-card__tools {
-  color: #3b82f6;
-  font-size: 0.7rem;
-  margin-top: 0.2rem;
-}
 
 /* ---- Resource Chips ---- */
 
@@ -699,10 +559,6 @@ body {
 /* ---- Responsive ---- */
 
 @media (max-width: 900px) {
-  .office-board {
-    grid-template-columns: repeat(2, 1fr);
-  }
-
   .app-body {
     flex-direction: column;
   }
@@ -842,12 +698,6 @@ body {
   background: #3b82f6;
   border-radius: 50%;
   animation: pulse 1.5s ease-in-out infinite;
-}
-
-@media (max-width: 500px) {
-  .office-board {
-    grid-template-columns: 1fr;
-  }
 }
 
 /* ---- Replay Controls ---- */
