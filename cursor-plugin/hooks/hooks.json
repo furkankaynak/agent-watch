@@ -1,0 +1,25 @@
+{
+  "hooks": {
+    "sessionStart":        [{ "command": "node hooks/ingest.cjs" }],
+    "sessionEnd":          [{ "command": "node hooks/ingest.cjs" }],
+    "preToolUse":          [{ "command": "node hooks/ingest.cjs", "timeout": 5 }],
+    "postToolUse":         [{ "command": "node hooks/ingest.cjs" }],
+    "postToolUseFailure":  [{ "command": "node hooks/ingest.cjs" }],
+    "subagentStart":       [{ "command": "node hooks/ingest.cjs" }],
+    "subagentStop":        [{ "command": "node hooks/ingest.cjs" }],
+    "beforeShellExecution": [{ "command": "node hooks/ingest.cjs", "timeout": 5 }],
+    "afterShellExecution": [{ "command": "node hooks/ingest.cjs" }],
+    "beforeMCPExecution":  [{ "command": "node hooks/ingest.cjs", "timeout": 5 }],
+    "afterMCPExecution":   [{ "command": "node hooks/ingest.cjs" }],
+    "beforeReadFile":      [{ "command": "node hooks/ingest.cjs", "timeout": 5 }],
+    "afterFileEdit":       [{ "command": "node hooks/ingest.cjs" }],
+    "beforeSubmitPrompt":  [{ "command": "node hooks/ingest.cjs" }],
+    "preCompact":          [{ "command": "node hooks/ingest.cjs" }],
+    "stop":                [{ "command": "node hooks/ingest.cjs" }],
+    "afterAgentResponse":  [{ "command": "node hooks/ingest.cjs" }],
+    "afterAgentThought":   [{ "command": "node hooks/ingest.cjs" }],
+    "beforeTabFileRead":   [{ "command": "node hooks/ingest.cjs", "timeout": 5 }],
+    "afterTabFileEdit":    [{ "command": "node hooks/ingest.cjs" }],
+    "workspaceOpen":       [{ "command": "node hooks/ingest.cjs" }]
+  }
+}

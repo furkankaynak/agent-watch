@@ -1,4 +1,4 @@
-import { copyFile, mkdir, stat, writeFile } from "node:fs/promises";
+import { mkdir, stat, writeFile } from "node:fs/promises";
 import { dirname, join } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -17,34 +17,26 @@ const agentsWatchRoot = dirname(dirname(fileURLToPath(import.meta.url)));
 
 export async function setupHooks(projectRoot: string): Promise<boolean> {
   const hooksJsonPath = join(projectRoot, ".cursor", "hooks.json");
-  const hooksDir = join(projectRoot, ".cursor", "hooks");
-  const hookScriptPath = join(hooksDir, "generic-hook.js");
 
   try {
     await stat(hooksJsonPath);
     return false;
   } catch {
-    // hooks.json doesn't exist — create it
+    // hooks.json doesn't exist — create with reference to the plugin's ingest script
   }
 
-  const sourceScript = join(agentsWatchRoot, "hooks", "generic-hook.js");
-
-  await mkdir(hooksDir, { recursive: true });
-
-  try {
-    await copyFile(sourceScript, hookScriptPath);
-  } catch {
-    console.warn("Could not copy hook script to project, referencing agents-watch path instead");
-  }
+  const ingestScript = join(agentsWatchRoot, "cursor-plugin", "hooks", "ingest.cjs");
+  const usePlugin = await stat(ingestScript).then(() => true, () => false);
+  const fallback = join(agentsWatchRoot, "hooks", "generic-hook.js");
+  const command = `node ${usePlugin ? ingestScript : fallback}`;
 
   const hooks = Object.fromEntries(
-    HOOK_EVENTS.map((name) => [name, [{ command: `node ${hookScriptPath}` }]])
+    HOOK_EVENTS.map((name) => [name, [{ command }]])
   );
 
-  const hooksJson = JSON.stringify({ version: 1, hooks }, null, 2) + "\n";
+  await mkdir(join(projectRoot, ".cursor"), { recursive: true });
+  await writeFile(hooksJsonPath, JSON.stringify({ version: 1, hooks }, null, 2) + "\n", "utf8");
 
-  await writeFile(hooksJsonPath, hooksJson, "utf8");
-
-  console.log(`[setupHooks] Created ${hooksJsonPath} with ${HOOK_EVENTS.length} hooks`);
+  console.log(`[setupHooks] Created ${hooksJsonPath} → ${command}`);
   return true;
 }

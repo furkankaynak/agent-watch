@@ -20,6 +20,15 @@ export type AgentNode = {
   lastSeenAt: number;
   errors: string[];
   hookEvents: string[];
+  toolCallCount: number;
+  toolErrorCount: number;
+  fileReadCount: number;
+  fileEditCount: number;
+  shellCommandCount: number;
+  mcpCallCount: number;
+  subagentCount: number;
+  durationMs: number | null;
+  lastFile: string | null;
 };
 
 export type TaskCall = {

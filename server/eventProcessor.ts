@@ -52,6 +52,9 @@ export function processEvent(db: Database.Database, event: LogEvent, rawEventId?
     case "tool_done":
       handleToolDone(db, event);
       break;
+    case "file_read":
+      handleFileRead(db, event);
+      break;
     case "skill_read":
     case "rule_read":
     case "decisions_read":
@@ -123,11 +126,12 @@ function tryCompleteRun(db: Database.Database, agentId: string, timestamp: strin
 
 // ── event handlers ────────────────────────────────────────────
 
-function ensureRun(db: Database.Database): number {
+function ensureRun(db: Database.Database, event?: LogEvent): number {
   if (currentRunId === null) {
+    const wsRoot = event?.fields?.workspace_root ?? null;
     const info = db
-      .prepare("INSERT INTO runs (label, status, started_at) VALUES (?, 'running', ?)")
-      .run(null, new Date().toISOString());
+      .prepare("INSERT INTO runs (label, status, started_at, workspace_root) VALUES (?, 'running', ?, ?)")
+      .run(null, new Date().toISOString(), wsRoot);
     currentRunId = info.lastInsertRowid as number;
     persistRunId(db);
   }
@@ -186,7 +190,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
   const toolName = event.fields.tool_name;
 
   if (toolName === "Task") {
-    const runId = ensureRun(db);
+    const runId = ensureRun(db, event);
     const bound = bindConversation(event, db);
     const agentId = event.fields.tool_use_id;
     if (!agentId) return;
@@ -195,9 +199,10 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
     const description = event.fields.input_description ?? null;
     const label = humanizeLabel(subagentType);
 
+    const wsRoot = event.fields.workspace_root ?? null;
     db.prepare(
-      `INSERT OR REPLACE INTO agents (id, run_id, label, agent_type, description, parent_agent_id, conversation_id, status, created_at, last_seen_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, 'incoming', ?, ?)`,
+      `INSERT OR REPLACE INTO agents (id, run_id, label, agent_type, description, parent_agent_id, conversation_id, status, created_at, last_seen_at, workspace_root)
+       VALUES (?, ?, ?, ?, ?, ?, ?, 'incoming', ?, ?, ?)`,
     ).run(
       agentId,
       runId,
@@ -208,6 +213,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
       event.fields.conversation_id ?? null,
       event.timestamp,
       event.timestamp,
+      wsRoot,
     );
 
     if (!isRootAgentForRun(db, runId, agentId)) {
@@ -306,6 +312,35 @@ function handleToolDone(db: Database.Database, event: LogEvent): void {
     `UPDATE agents SET status = ?, last_seen_at = ?
      WHERE id = ? AND status NOT IN ('completed', 'failed')`,
   ).run(newStatus, event.timestamp, bound.agentId);
+}
+
+function safeParseArray(raw: string | undefined): string[] {
+  if (!raw) return [];
+  try {
+    const p = JSON.parse(raw);
+    return Array.isArray(p) ? p : [];
+  } catch { return []; }
+}
+
+function handleFileRead(db: Database.Database, event: LogEvent): void {
+  const bound = bindConversation(event, db);
+  if (!bound.agentId) return;
+
+  const rules = safeParseArray(event.fields.attachment_rules);
+  for (const rule of rules) {
+    db.prepare(
+      "INSERT OR IGNORE INTO agent_chips (agent_id, chip_type, chip_value, seen_at) VALUES (?, ?, ?, ?)"
+    ).run(bound.agentId, "rule", rule, event.timestamp);
+  }
+
+  const skills = safeParseArray(event.fields.attachment_skills);
+  for (const skill of skills) {
+    db.prepare(
+      "INSERT OR IGNORE INTO agent_chips (agent_id, chip_type, chip_value, seen_at) VALUES (?, ?, ?, ?)"
+    ).run(bound.agentId, "skill", skill, event.timestamp);
+  }
+
+  touchAgent(db, bound.agentId, event.timestamp);
 }
 
 function handleChipEvent(db: Database.Database, event: LogEvent): void {

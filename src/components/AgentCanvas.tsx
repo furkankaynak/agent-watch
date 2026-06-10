@@ -52,6 +52,11 @@ function layoutNodes(
         type: agent.type,
         status: agent.status,
         errors: agent.errors,
+        toolCallCount: agent.toolCallCount,
+        toolErrorCount: agent.toolErrorCount,
+        fileEditCount: agent.fileEditCount,
+        fileReadCount: agent.fileReadCount,
+        durationMs: agent.durationMs,
       },
       selected: agent.id === selectedAgentId,
     };

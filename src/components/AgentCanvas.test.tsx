@@ -17,6 +17,15 @@ function makeAgent(id: string, overrides: Partial<AgentNode> = {}): AgentNode {
     lastSeenAt: Date.now(),
     errors: [],
     hookEvents: [],
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    fileReadCount: 0,
+    fileEditCount: 0,
+    shellCommandCount: 0,
+    mcpCallCount: 0,
+    subagentCount: 0,
+    durationMs: null,
+    lastFile: null,
     ...overrides,
   };
 }

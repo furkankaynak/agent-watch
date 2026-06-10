@@ -60,7 +60,7 @@ export default function App() {
         </main>
 
         <aside className="app-aside">
-          <InspectorPanel agent={selectedAgent} />
+          <InspectorPanel agent={selectedAgent} events={displayState.events} agents={displayState.agents} />
           <EventFeed
             events={displayState.events}
             conversationToAgentId={displayState.conversationToAgentId}

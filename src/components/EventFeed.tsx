@@ -42,16 +42,54 @@ function shortMessage(event: LogEvent, props: Props): string {
       } ${event.fields.duration_ms ? `${event.fields.duration_ms}ms` : ""}`;
     case "subagent_start":
       return `${event.fields.agent_label ?? event.fields.subagent_type ?? "agent"} started`;
+    case "subagent_stop": {
+      const status = event.fields.status || "done";
+      const dur = event.fields.duration_ms;
+      const fc = event.fields.files_changed;
+      const parts = [status];
+      if (dur) parts.push(`${dur}ms`);
+      if (fc) parts.push(`${fc} files`);
+      return `${prefix}${parts.join(" · ")}`;
+    }
+    case "session_start":
+      return event.fields.model ? `Session started (${event.fields.model})` : "Session started";
     case "session_end":
       return `${prefix}session ${event.fields.final_status ?? "ended"}`;
     case "file_read":
-      return `${prefix}read ${event.fields.basename ?? event.fields.path ?? "file"}`;
+      return `${prefix}read ${event.fields.file_path?.split("/").pop() ?? event.fields.path ?? "file"}`;
     case "file_edit":
-      return `${prefix}edited ${event.fields.path ?? "file"}`;
+      return `${prefix}edited ${event.fields.file_path?.split("/").pop() ?? event.fields.path ?? "file"}`;
     case "shell_start":
       return `${prefix}shell ${event.fields.command_summary ?? "started"}`;
     case "shell_done":
       return `${prefix}shell done ${event.fields.duration_ms ? `${event.fields.duration_ms}ms` : ""}`;
+    case "mcp_start":
+      return `${prefix}MCP ${event.fields.tool_name ?? "tool"}`;
+    case "mcp_done":
+      return `${prefix}MCP ${event.fields.tool_name ?? "tool"} done${
+        event.fields.duration_ms ? ` (${event.fields.duration_ms}ms)` : ""
+      }`;
+    case "prompt_submit":
+      return `${prefix}prompt submitted`;
+    case "context_compact":
+      return `${prefix}context compacted`;
+    case "agent_stop": {
+      const s = event.fields.status || "stopped";
+      const loops = event.fields.loop_count;
+      return `${prefix}${s}${loops ? ` · ${loops} loops` : ""}`;
+    }
+    case "agent_response":
+      return `${prefix}agent responded`;
+    case "agent_thought":
+      return `${prefix}agent thought`;
+    case "tab_file_read":
+      return `${prefix}tab read ${event.fields.file_path?.split("/").pop() ?? "file"}`;
+    case "tab_file_edit":
+      return `${prefix}tab edited ${event.fields.file_path?.split("/").pop() ?? "file"} (${
+        event.fields.edit_count || "0"
+      } edits)`;
+    case "workspace_open":
+      return `Workspace opened: ${event.fields.workspace_root ?? "unknown"}`;
     case "hook_event":
       return `${prefix}${hookLabel(event.fields.hook_event_name ?? "")}${
         event.fields.tool_name ? ` ${event.fields.tool_name}` : ""

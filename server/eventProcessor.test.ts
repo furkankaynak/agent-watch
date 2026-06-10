@@ -720,4 +720,46 @@ describe("eventProcessor", () => {
     expect(agent.status).toBe("running");
     expect(agent.last_seen_at).toBe("2026-06-04T00:00:02.000Z");
   });
+
+  it("inserts agent_chips from file_read with attachment_rules and attachment_skills", async () => {
+    const { processEvent } = await import("./eventProcessor");
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 1,
+        timestamp: "2026-06-04T00:00:00.000Z",
+        eventType: "tool_start",
+        fields: {
+          tool_name: "Task",
+          input_subagent_type: "generalPurpose",
+          input_description: "test agent",
+          conversation_id: "file-chip-conv",
+          generation_id: "g1",
+          tool_use_id: "file-chip-agent",
+        },
+      }),
+    );
+
+    processEvent(
+      db,
+      makeEvent({
+        lineNumber: 2,
+        timestamp: "2026-06-04T00:00:01.000Z",
+        eventType: "file_read",
+        fields: {
+          conversation_id: "file-chip-conv",
+          generation_id: "g1",
+          file_path: "/p/src/App.tsx",
+          attachment_rules: '["react","testing"]',
+          attachment_skills: '["code-reviewer"]',
+        },
+      }),
+    );
+
+    const chips = db.prepare("SELECT * FROM agent_chips WHERE agent_id = ?").all("file-chip-agent") as any[];
+    expect(chips.length).toBe(3);
+    expect(chips.map((c: any) => c.chip_type + ":" + c.chip_value)).toEqual(
+      expect.arrayContaining(["rule:react", "rule:testing", "skill:code-reviewer"]),
+    );
+  });
 });

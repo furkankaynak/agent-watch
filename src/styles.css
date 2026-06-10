@@ -224,6 +224,32 @@ body {
 .inspector__chip--hook-tab { background: #f0fdf4; color: #15803d; }
 .inspector__chip--hook-lifecycle { background: #fef3c7; color: #b45309; }
 
+.inspector__list--compact {
+  padding-left: 0;
+  list-style: none;
+}
+
+.inspector__list--compact li {
+  display: flex;
+  gap: 6px;
+  align-items: center;
+  padding: 1px 0;
+  font-size: 0.72rem;
+}
+
+.inspector__list--compact li span:first-child {
+  min-width: 1.2rem;
+}
+
+.inspector__list li span:last-child {
+  margin-left: auto;
+  color: #6b7280;
+}
+
+.inspector__item--error {
+  color: #ef4444;
+}
+
 /* ---- Event Feed ---- */
 
 .event-feed {
@@ -283,6 +309,18 @@ body {
 .event-feed__type--shell_start { background: #fefce8; color: #ca8a04; }
 .event-feed__type--shell_done { background: #f0fdf4; color: #16a34a; }
 .event-feed__type--hook_event { background: #fdf4ff; color: #a21caf; }
+.event-feed__type--session_start { background: #f3e8ff; color: #7c3aed; }
+.event-feed__type--subagent_stop { background: #eff6ff; color: #2563eb; }
+.event-feed__type--mcp_start,
+.event-feed__type--mcp_done      { background: #fce7f3; color: #db2777; }
+.event-feed__type--prompt_submit { background: #f3e8ff; color: #7c3aed; }
+.event-feed__type--context_compact { background: #f1f5f9; color: #64748b; }
+.event-feed__type--agent_stop    { background: #fef2f2; color: #dc2626; }
+.event-feed__type--agent_response { background: #f0fdf4; color: #16a34a; }
+.event-feed__type--agent_thought  { background: #fefce8; color: #ca8a04; }
+.event-feed__type--tab_file_read  { background: #f1f5f9; color: #475569; }
+.event-feed__type--tab_file_edit  { background: #ffedd5; color: #c2410c; }
+.event-feed__type--workspace_open { background: #f1f5f9; color: #64748b; }
 
 .event-feed__msg {
   color: #374151;
@@ -671,6 +709,26 @@ body {
   font-weight: 600;
   margin-top: 0.2rem;
 }
+
+.agent-node__stats {
+  display: flex;
+  gap: 0.25rem;
+  margin-top: 0.3rem;
+  flex-wrap: wrap;
+}
+
+.agent-node__badge {
+  font-size: 0.65rem;
+  padding: 0.1rem 0.4rem;
+  border-radius: 3px;
+  font-family: monospace;
+  white-space: nowrap;
+}
+
+.agent-node__badge--tools  { background: rgba(59, 130, 246, 0.12); color: #60a5fa; }
+.agent-node__badge--files  { background: rgba(34, 197, 94, 0.10); color: #4ade80; }
+.agent-node__badge--errors { background: rgba(239, 68, 68, 0.12); color: #f87171; }
+.agent-node__badge--time   { background: rgba(148, 163, 184, 0.10); color: #94a3b8; }
 
 /* ---- Agent Canvas ---- */
 

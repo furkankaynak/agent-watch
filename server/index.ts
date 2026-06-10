@@ -1,4 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
+import { createServer as createTcpServer } from "node:net";
 import type { LogEvent } from "../src/shared/logTypes";
 import { getDb } from "./database";
 import { processEvent, restoreRunState } from "./eventProcessor";
@@ -11,6 +12,7 @@ const POLL_MS = 1_000;
 
 const PROJECT_ROOT = process.env.PROJECT_ROOT ?? process.cwd();
 const port = Number(process.env.PORT || 4317);
+const INGEST_PORT = Number(process.env.INGEST_PORT || 4318);
 
 const corsHeaders = {
   "Access-Control-Allow-Headers": "Content-Type",
@@ -26,14 +28,15 @@ type LogEventRecord = {
   raw: string;
 };
 
-function insertEventAndProcess(event: LogEventRecord): void {
+function insertEventAndProcess(event: LogEventRecord, workspaceRoot?: string | null): void {
   const db = getDb();
   const conversationId = event.fields.conversation_id ?? null;
+  const wsRoot = workspaceRoot ?? null;
   const info = db.prepare(
-    "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw, conversation_id) VALUES (?, ?, ?, ?, ?, ?)"
+    "INSERT INTO raw_events (line_number, timestamp, event_type, fields, raw, conversation_id, workspace_root) VALUES (?, ?, ?, ?, ?, ?, ?)"
   ).run(
     event.lineNumber, event.timestamp, event.eventType,
-    JSON.stringify(event.fields), event.raw, conversationId
+    JSON.stringify(event.fields), event.raw, conversationId, wsRoot
   );
   processEvent(db, event as Parameters<typeof processEvent>[1], info.lastInsertRowid as number);
 }
@@ -316,8 +319,47 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
   response.on("close", close);
 }
 
+// ── TCP ingest listener (for plugin hooks via JSONL) ──
+
+function startTcpIngest(): void {
+  const tcpServer = createTcpServer((socket) => {
+    let buffer = "";
+    socket.on("data", (chunk: Buffer) => {
+      buffer += chunk.toString();
+      const lines = buffer.split("\n");
+      buffer = lines.pop() || "";
+      for (const line of lines) {
+        if (!line.trim()) continue;
+        try {
+          const { appName, event: eventData } = JSON.parse(line);
+          if (!eventData) continue;
+          insertEventAndProcess(
+            eventData as LogEventRecord,
+            appName || eventData.workspace_root || null,
+          );
+          const hookName = eventData.fields?.hook_event_name;
+          if (hookName === "sessionStart") {
+            handleSessionStart(eventData as LogEventRecord);
+          } else if (hookName === "sessionEnd") {
+            handleSessionEnd(eventData as LogEventRecord);
+          }
+        } catch (err) {
+          console.error("[tcp] parse error:", err);
+        }
+      }
+    });
+    socket.on("error", () => {});
+  });
+  tcpServer.listen(INGEST_PORT, "127.0.0.1", () => {
+    console.log(`TCP ingest listener on 127.0.0.1:${INGEST_PORT}`);
+  });
+}
+
+// ── start ──
+
 const db = getDb();
 restoreRunState(db);
+startTcpIngest();
 
 server.listen(port, () => {
   console.log(`Agent Office Dashboard server listening on http://localhost:${port}`);

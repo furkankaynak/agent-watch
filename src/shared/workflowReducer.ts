@@ -34,6 +34,20 @@ export function applyWorkflowEvent(state: WorkflowState, event: LogEvent): Workf
       return applyToolDone(nextState, event);
     case "subagent_start":
       return applySubagentStart(nextState, event);
+    case "subagent_stop":
+      return applySubagentStop(nextState, event);
+    case "agent_stop":
+      return applyAgentStop(nextState, event);
+    case "file_read":
+    case "tab_file_read":
+      return applyFileRead(nextState, event);
+    case "file_edit":
+    case "tab_file_edit":
+      return applyFileEdit(nextState, event);
+    case "shell_start":
+      return applyShellStart(nextState, event);
+    case "mcp_start":
+      return applyMCPStart(nextState, event);
     case "skill_read":
       return applyChipEvent(nextState, event, "skills");
     case "rule_read":
@@ -83,7 +97,8 @@ function applyToolStart(state: WorkflowState, event: LogEvent): WorkflowState {
         activeTools,
         lastAction: formatLastAction(event) ?? agent.lastAction,
         lastSeenAt: eventTime(event),
-        status: activeStatus(agent.status)
+        status: activeStatus(agent.status),
+        toolCallCount: agent.toolCallCount + 1
       };
     });
   }
@@ -124,7 +139,16 @@ function createTaskAgent(
     activeTools: {},
     lastSeenAt: eventTime(event),
     errors: [],
-    hookEvents: []
+    hookEvents: [],
+    toolCallCount: 0,
+    toolErrorCount: 0,
+    fileReadCount: 0,
+    fileEditCount: 0,
+    shellCommandCount: 0,
+    mcpCallCount: 0,
+    subagentCount: 0,
+    durationMs: null,
+    lastFile: null,
   };
   const taskCall: TaskCall = {
     id,
@@ -135,7 +159,7 @@ function createTaskAgent(
     timestamp: event.timestamp
   };
 
-  return {
+  let nextState: WorkflowState = {
     ...state,
     agents: {
       ...state.agents,
@@ -143,6 +167,16 @@ function createTaskAgent(
     },
     taskCalls: [...state.taskCalls, taskCall]
   };
+
+  // increment parent's subagentCount
+  if (parentAgentId && nextState.agents[parentAgentId]) {
+    nextState = updateAgent(nextState, parentAgentId, (parent) => ({
+      ...parent,
+      subagentCount: parent.subagentCount + 1,
+    }));
+  }
+
+  return nextState;
 }
 
 function applySubagentStart(state: WorkflowState, event: LogEvent): WorkflowState {
@@ -176,6 +210,60 @@ function applySubagentStart(state: WorkflowState, event: LogEvent): WorkflowStat
     ...updated,
     unboundAgentIds: [...updated.unboundAgentIds, agentId]
   };
+}
+
+function applySubagentStop(state: WorkflowState, event: LogEvent): WorkflowState {
+  return touchBoundAgent(state, event);
+}
+
+function applyAgentStop(state: WorkflowState, event: LogEvent): WorkflowState {
+  return touchBoundAgent(state, event);
+}
+
+function applyFileRead(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+  if (!bound.agentId) return bound.state;
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    fileReadCount: agent.fileReadCount + 1,
+    lastFile: event.fields.file_path || agent.lastFile,
+    lastSeenAt: eventTime(event),
+    status: activeStatus(agent.status),
+  }));
+}
+
+function applyFileEdit(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+  if (!bound.agentId) return bound.state;
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    fileEditCount: agent.fileEditCount + 1,
+    lastFile: event.fields.file_path || agent.lastFile,
+    lastSeenAt: eventTime(event),
+    status: activeStatus(agent.status),
+  }));
+}
+
+function applyShellStart(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+  if (!bound.agentId) return bound.state;
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    shellCommandCount: agent.shellCommandCount + 1,
+    lastSeenAt: eventTime(event),
+    status: activeStatus(agent.status),
+  }));
+}
+
+function applyMCPStart(state: WorkflowState, event: LogEvent): WorkflowState {
+  const bound = bindConversationIfNeeded(state, event);
+  if (!bound.agentId) return bound.state;
+  return updateAgent(bound.state, bound.agentId, (agent) => ({
+    ...agent,
+    mcpCallCount: agent.mcpCallCount + 1,
+    lastSeenAt: eventTime(event),
+    status: activeStatus(agent.status),
+  }));
 }
 
 function applyChipEvent(
@@ -218,7 +306,8 @@ function applyToolDone(state: WorkflowState, event: LogEvent): WorkflowState {
       activeTools,
       errors,
       lastSeenAt: eventTime(event),
-      status: failed ? "failed" : doneStatus(agent.status, activeTools)
+      status: failed ? "failed" : doneStatus(agent.status, activeTools),
+      toolErrorCount: failed ? agent.toolErrorCount + 1 : agent.toolErrorCount
     };
   });
 }
