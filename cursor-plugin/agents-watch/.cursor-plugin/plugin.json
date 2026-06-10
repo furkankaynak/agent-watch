@@ -1,0 +1,8 @@
+{
+  "name": "agents-watch",
+  "version": "0.1.0",
+  "description": "Real-time agent observability for Cursor — captures hook events into TCP for the agents-watch dashboard",
+  "author": { "name": "Furkan Kaynak" },
+  "keywords": ["observability", "agent", "monitoring", "hooks"],
+  "hooks": "hooks/hooks.json"
+}

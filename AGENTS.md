@@ -18,7 +18,7 @@ Doğrulama sırası: `npm run typecheck && npm run test`
 ## Mimari
 
 ```
-Cursor plugin (cursor-plugin/hooks/ingest.cjs) ──(TCP/JSONL)──► server/index.ts (port 4318)
+Cursor plugin (cursor-plugin/agents-watch/hooks/ingest.cjs) ──(TCP/JSONL)──► server/index.ts (port 4318)
   (stdin → flatten → {appName, event} → buffer.jsonl → TCP)
 
                                                               │
@@ -48,7 +48,7 @@ Cursor plugin (cursor-plugin/hooks/ingest.cjs) ──(TCP/JSONL)──► server
 | `src/shared/` | Ortak: types, parser, reducer, hookTypes |
 | `src/components/` | React: AgentCanvas (ReactFlow), AgentNode, InspectorPanel, EventFeed, ReplayControls, SessionSidebar, StatusLight, ResourceChips |
 | `src/hooks/` | React hooks: useWorkflowStream (SSE), useReplay (DVR), useSessions |
-| `cursor-plugin/` | Cursor plugin paketi (manifest, hooks, SQLite DB) |
+| `cursor-plugin/agents-watch/` | Cursor plugin paketi (manifest, hooks, SQLite DB) |
 | `hooks/` | Cursor hook script'leri (kütüphane ile dağıtılır) |
 | `src/` | Root: `App.tsx`, `main.tsx`, `setupTests.ts` (vitest setup, ResizeObserver stub) |
 | `docs/plans/` | Planlar ve tasarım dokümanları |
@@ -58,10 +58,10 @@ Cursor plugin (cursor-plugin/hooks/ingest.cjs) ──(TCP/JSONL)──► server
 
 Proje bir **kütüphane/araçtır** — `.cursor/hooks.json` kendi reposunda değil, kullanıcının projesinde olmalıdır.
 
-- `cursor-plugin/hooks/ingest.cjs`: 21 Cursor hook'unu tek bir script'le yakalar. stdin'den JSON okur, alanları düzleştirir, `.buffer.jsonl`'a yazar, ardından TCP/JSONL ile server'a (port 4318) göndermeye çalışır. Server kapalıysa buffer'da birikir, sonraki başarılı bağlantıda flush edilir. Her zaman exit 0 (fail-open). DB yok, HTTP yok, sadece net + fs.
+- `cursor-plugin/agents-watch/hooks/ingest.cjs`: 21 Cursor hook'unu tek bir script'le yakalar. stdin'den JSON okur, alanları düzleştirir, `<proje>/.cursor/.runtime/agents-watch-buffer.jsonl`'a yazar, ardından TCP/JSONL ile server'a (port 4318) göndermeye çalışır. Server kapalıysa buffer'da birikir, sonraki başarılı bağlantıda flush edilir. Her zaman exit 0 (fail-open). DB yok, HTTP yok, sadece net + fs.
 - `hooks/generic-hook.js`: Legacy alternatif — HTTP POST ile `/api/ingest`'e event gönderir. Sadece geriye dönük uyumluluk için korunuyor.
-- `server/setupHooks.ts`: Server başlarken kullanıcının proje kökünde `.cursor/hooks.json` yoksa otomatik oluşturur, `cursor-plugin/hooks/ingest.cjs`'i referans alır. `PROJECT_ROOT` env var'ı veya `process.cwd()` ile proje kökünü bulur.
-- `cursor-plugin/hooks/hooks.json`: Plugin manifest'i ile otomatik keşfedilen hook registration. Plugin `~/.cursor/plugins/local/agents-watch/`'a kurulduğunda, tüm 21 hook event'i otomatik olarak tanınır (proje bazlı `.cursor/hooks.json` gerekmez).
+- `server/setupHooks.ts`: Server başlarken kullanıcının proje kökünde `.cursor/hooks.json` yoksa otomatik oluşturur, `cursor-plugin/agents-watch/hooks/ingest.cjs`'i referans alır. `PROJECT_ROOT` env var'ı veya `process.cwd()` ile proje kökünü bulur.
+- `cursor-plugin/agents-watch/hooks/hooks.json`: Plugin manifest'i ile otomatik keşfedilen hook registration. Plugin `~/.cursor/plugins/local/agents-watch/`'a kurulduğunda, tüm 21 hook event'i otomatik olarak tanınır (proje bazlı `.cursor/hooks.json` gerekmez).
 - `server/hookMapper.ts`: Hook payload'larını LogEvent formatına dönüştürür. `preToolUse → tool_start`, `postToolUse → tool_done`, `subagentStart → subagent_start`, `sessionEnd → session_end`, diğerleri → `hook_event`.
 - `src/shared/hookTypes.ts`: 21 hook için label, kategori (agent/tab/lifecycle) tanımları.
 - Reducer'da `hook_event` case'i: `subagentStop` ve `stop` hook'ları ajan durumunu günceller, diğerleri `hookEvents[]` dizisinde birikir.

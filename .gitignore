@@ -8,3 +8,4 @@ dist/
 *.db-wal
 .buffer.jsonl
 .cursor/
+.cursor/.runtime/

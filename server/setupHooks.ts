@@ -25,7 +25,7 @@ export async function setupHooks(projectRoot: string): Promise<boolean> {
     // hooks.json doesn't exist — create with reference to the plugin's ingest script
   }
 
-  const ingestScript = join(agentsWatchRoot, "cursor-plugin", "hooks", "ingest.cjs");
+  const ingestScript = join(agentsWatchRoot, "cursor-plugin", "agents-watch", "hooks", "ingest.cjs");
   const usePlugin = await stat(ingestScript).then(() => true, () => false);
   const fallback = join(agentsWatchRoot, "hooks", "generic-hook.js");
   const command = `node ${usePlugin ? ingestScript : fallback}`;
