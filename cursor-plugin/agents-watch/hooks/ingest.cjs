@@ -150,7 +150,9 @@ function flushBufferToServer(file) {
       if (data) socket.write(data);
       socket.end();
     });
-    socket.on('error', () => {});
+    socket.on('error', (err) => {
+      console.error('[agents-watch] TCP flush to 127.0.0.1:' + INGEST_PORT + ' failed:', err.message);
+    });
     socket.setTimeout(3000, () => socket.destroy());
   } catch {}
 }
@@ -163,8 +165,12 @@ function sendEvent(appName, eventBody) {
     event: eventBody,
   });
   const bufferFile = getBufferFile(eventBody);
+  const hadPending = fs.existsSync(bufferFile) && fs.statSync(bufferFile).size > 0;
   appendToBuffer(bufferFile, line);
   flushBufferToServer(bufferFile);
+  if (hadPending && fs.existsSync(bufferFile) && fs.statSync(bufferFile).size > 0) {
+    console.error('[agents-watch] Buffer not flushed — server at 127.0.0.1:' + INGEST_PORT + ' may be down');
+  }
 }
 
 // ── handlers ──
@@ -671,7 +677,7 @@ function main() {
   process.stdout.write(JSON.stringify(response));
 
   // small delay for async TCP flush
-  setTimeout(() => process.exit(0), 20);
+  setTimeout(() => process.exit(0), 200);
 }
 
 main();

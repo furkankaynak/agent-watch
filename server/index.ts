@@ -1,5 +1,5 @@
 import { createServer, type IncomingMessage, type ServerResponse } from "node:http";
-import { createServer as createTcpServer } from "node:net";
+import { createServer as createTcpServer, type Server as TcpServer } from "node:net";
 import type { LogEvent } from "../src/shared/logTypes";
 import { getDb } from "./database";
 import { processEvent, restoreRunState } from "./eventProcessor";
@@ -321,7 +321,7 @@ function streamSseEvents(request: IncomingMessage, response: ServerResponse) {
 
 // ── TCP ingest listener (for plugin hooks via JSONL) ──
 
-function startTcpIngest(): void {
+function startTcpIngest(): TcpServer {
   const tcpServer = createTcpServer((socket) => {
     let buffer = "";
     socket.on("data", (chunk: Buffer) => {
@@ -348,20 +348,47 @@ function startTcpIngest(): void {
         }
       }
     });
-    socket.on("error", () => {});
+    socket.on("error", (err) => {
+      console.error("[tcp] socket error:", err.message);
+    });
+  });
+  tcpServer.on("error", (err: NodeJS.ErrnoException) => {
+    if ((err as any).code === "EADDRINUSE") {
+      console.error(`[tcp] Port ${INGEST_PORT} is already in use — TCP ingest unavailable`);
+    } else {
+      console.error("[tcp] server error:", err.message);
+    }
   });
   tcpServer.listen(INGEST_PORT, "127.0.0.1", () => {
     console.log(`TCP ingest listener on 127.0.0.1:${INGEST_PORT}`);
   });
+  return tcpServer;
 }
 
 // ── start ──
 
 const db = getDb();
 restoreRunState(db);
-startTcpIngest();
+const tcpServer = startTcpIngest();
+
+server.on("error", (err: NodeJS.ErrnoException) => {
+  if ((err as any).code === "EADDRINUSE") {
+    console.error(`[http] Port ${port} is already in use`);
+  } else {
+    console.error("[http] server error:", err.message);
+  }
+});
 
 server.listen(port, () => {
   console.log(`Agent Office Dashboard server listening on http://localhost:${port}`);
   void setupHooks(PROJECT_ROOT);
 });
+
+function shutdown(signal: string): void {
+  console.log(`Received ${signal}, shutting down gracefully...`);
+  tcpServer.close();
+  server.close();
+  process.exit(0);
+}
+process.on("SIGINT", () => shutdown("SIGINT"));
+process.on("SIGTERM", () => shutdown("SIGTERM"));
