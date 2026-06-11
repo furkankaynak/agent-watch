@@ -1,4 +1,4 @@
-import type Database from "better-sqlite3";
+import type { Database } from "./database";
 import type { LogEvent } from "../src/shared/logTypes";
 
 const conversationToAgentId: Record<string, string> = {};
@@ -12,7 +12,7 @@ export function getCurrentRunId(): number | null {
   return currentRunId;
 }
 
-export function restoreRunState(db: Database.Database): void {
+export function restoreRunState(db: Database): void {
   const row = db
     .prepare("SELECT value FROM server_state WHERE key = ?")
     .get("current_run_id") as { value: string } | undefined;
@@ -24,18 +24,18 @@ export function restoreRunState(db: Database.Database): void {
   }
 }
 
-function persistRunId(db: Database.Database): void {
+function persistRunId(db: Database): void {
   db.prepare("INSERT OR REPLACE INTO server_state (key, value) VALUES (?, ?)").run(
     "current_run_id",
     String(currentRunId),
   );
 }
 
-function clearRunId(db: Database.Database): void {
+function clearRunId(db: Database): void {
   db.prepare("DELETE FROM server_state WHERE key = ?").run("current_run_id");
 }
 
-export function processEvent(db: Database.Database, event: LogEvent, rawEventId?: number): void {
+export function processEvent(db: Database, event: LogEvent, rawEventId?: number): void {
   const now = Date.now();
   if (now - lastActivityAt > 60_000) {
     checkStaleRun(db, now);
@@ -78,7 +78,7 @@ export function processEvent(db: Database.Database, event: LogEvent, rawEventId?
 
 // ── helper queries ────────────────────────────────────────────
 
-function touchAgent(db: Database.Database, agentId: string, timestamp: string): void {
+function touchAgent(db: Database, agentId: string, timestamp: string): void {
   db.prepare(
     `UPDATE agents SET last_seen_at = ?,
        status = CASE WHEN status IN ('completed', 'failed') THEN status ELSE 'running' END
@@ -87,7 +87,7 @@ function touchAgent(db: Database.Database, agentId: string, timestamp: string): 
 }
 
 function completeAgent(
-  db: Database.Database,
+  db: Database,
   agentId: string,
   status: string,
   timestamp: string,
@@ -98,14 +98,14 @@ function completeAgent(
   ).run(status, timestamp, isTerminal ? timestamp : null, agentId);
 }
 
-function setRunCompleted(db: Database.Database, runId: number, timestamp: string): void {
+function setRunCompleted(db: Database, runId: number, timestamp: string): void {
   db.prepare(
     "UPDATE runs SET status = 'completed', ended_at = ? WHERE id = ?",
   ).run(timestamp, runId);
 }
 
 function isRootAgentForRun(
-  db: Database.Database,
+  db: Database,
   runId: number,
   agentId: string,
 ): boolean {
@@ -115,7 +115,7 @@ function isRootAgentForRun(
   return run?.root_agent_id === agentId;
 }
 
-function tryCompleteRun(db: Database.Database, agentId: string, timestamp: string): void {
+function tryCompleteRun(db: Database, agentId: string, timestamp: string): void {
   if (currentRunId === null) return;
   if (isRootAgentForRun(db, currentRunId, agentId)) {
     setRunCompleted(db, currentRunId, timestamp);
@@ -126,7 +126,7 @@ function tryCompleteRun(db: Database.Database, agentId: string, timestamp: strin
 
 // ── event handlers ────────────────────────────────────────────
 
-function ensureRun(db: Database.Database, event?: LogEvent): number {
+function ensureRun(db: Database, event?: LogEvent): number {
   if (currentRunId === null) {
     const wsRoot = event?.fields?.workspace_root ?? null;
     const info = db
@@ -146,7 +146,7 @@ function resolveHookStatus(hookStatus: string | undefined): string | null {
 
 function bindConversation(
   event: LogEvent,
-  db?: Database.Database,
+  db?: Database,
 ): { agentId?: string } {
   const conversationId = event.fields.conversation_id;
   if (!conversationId) return {};
@@ -186,7 +186,7 @@ function bindConversation(
   return {};
 }
 
-function handleToolStart(db: Database.Database, event: LogEvent): void {
+function handleToolStart(db: Database, event: LogEvent): void {
   const toolName = event.fields.tool_name;
 
   if (toolName === "Task") {
@@ -238,7 +238,7 @@ function handleToolStart(db: Database.Database, event: LogEvent): void {
   touchAgent(db, agentId, event.timestamp);
 }
 
-function handleSubagentStart(db: Database.Database, event: LogEvent): void {
+function handleSubagentStart(db: Database, event: LogEvent): void {
   const subagentId = event.fields.subagent_id;
   if (!subagentId) return;
 
@@ -265,7 +265,7 @@ function handleSubagentStart(db: Database.Database, event: LogEvent): void {
   }
 }
 
-function handleToolDone(db: Database.Database, event: LogEvent): void {
+function handleToolDone(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -322,7 +322,7 @@ function safeParseArray(raw: string | undefined): string[] {
   } catch { return []; }
 }
 
-function handleFileRead(db: Database.Database, event: LogEvent): void {
+function handleFileRead(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -343,7 +343,7 @@ function handleFileRead(db: Database.Database, event: LogEvent): void {
   touchAgent(db, bound.agentId, event.timestamp);
 }
 
-function handleChipEvent(db: Database.Database, event: LogEvent): void {
+function handleChipEvent(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -370,7 +370,7 @@ function handleChipEvent(db: Database.Database, event: LogEvent): void {
   touchAgent(db, bound.agentId, event.timestamp);
 }
 
-function handleSessionEnd(db: Database.Database, event: LogEvent): void {
+function handleSessionEnd(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -401,7 +401,7 @@ function handleSessionEnd(db: Database.Database, event: LogEvent): void {
   }
 }
 
-function handleHookEvent(db: Database.Database, event: LogEvent): void {
+function handleHookEvent(db: Database, event: LogEvent): void {
   const hookName = event.fields.hook_event_name;
   if (!hookName) return;
 
@@ -418,7 +418,7 @@ function handleHookEvent(db: Database.Database, event: LogEvent): void {
   }
 }
 
-function handleSubagentStop(db: Database.Database, event: LogEvent): void {
+function handleSubagentStop(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -427,7 +427,7 @@ function handleSubagentStop(db: Database.Database, event: LogEvent): void {
   completeAgent(db, bound.agentId, newStatus, event.timestamp, true);
 }
 
-function handleStopHook(db: Database.Database, event: LogEvent): void {
+function handleStopHook(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
@@ -441,14 +441,14 @@ function handleStopHook(db: Database.Database, event: LogEvent): void {
   }
 }
 
-function handleDefault(db: Database.Database, event: LogEvent): void {
+function handleDefault(db: Database, event: LogEvent): void {
   const bound = bindConversation(event, db);
   if (!bound.agentId) return;
 
   touchAgent(db, bound.agentId, event.timestamp);
 }
 
-function checkStaleRun(db: Database.Database, now: number): void {
+function checkStaleRun(db: Database, now: number): void {
   if (currentRunId === null) return;
 
   const activeAgents = db

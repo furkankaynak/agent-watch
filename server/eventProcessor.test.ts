@@ -1,10 +1,10 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from "vitest";
-import Database from "better-sqlite3";
+import { DatabaseWrapper } from "./database";
 import { initSchema } from "./database";
 import type { LogEvent } from "../src/shared/logTypes";
 
 describe("eventProcessor", () => {
-  let db: Database.Database;
+  let db: DatabaseWrapper;
 
   function makeEvent(overrides: Partial<LogEvent>): LogEvent {
     return {
@@ -18,7 +18,7 @@ describe("eventProcessor", () => {
   }
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new DatabaseWrapper(":memory:");
     initSchema(db);
     vi.resetModules();
   });

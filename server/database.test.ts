@@ -1,12 +1,12 @@
-import Database from "better-sqlite3";
-import { describe, it, expect, beforeEach, afterEach } from "vitest";
+import { DatabaseWrapper } from "./database";
 import { initSchema } from "./database";
+import { describe, it, expect, beforeEach, afterEach } from "vitest";
 
 describe("database schema", () => {
-  let db: Database.Database;
+  let db: DatabaseWrapper;
 
   beforeEach(() => {
-    db = new Database(":memory:");
+    db = new DatabaseWrapper(":memory:");
   });
 
   afterEach(() => {
@@ -15,10 +15,10 @@ describe("database schema", () => {
 
   it("creates all required tables", () => {
     initSchema(db);
-    const tables = db
-      .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
-      .all() as { name: string }[];
-    expect(tables.map((t) => t.name)).toEqual(
+    const rows = db.prepare(
+      "SELECT name FROM sqlite_master WHERE type='table' ORDER BY name"
+    ).all() as { name: string }[];
+    expect(rows.map((t) => t.name)).toEqual(
       expect.arrayContaining(["runs", "agents", "tool_calls", "agent_chips", "raw_events", "sessions", "server_state"])
     );
   });
